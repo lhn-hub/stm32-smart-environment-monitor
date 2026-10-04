@@ -1,0 +1,4 @@
+PASS actual controls: RGB sequence, bounce, three key sources, click/long exclusivity, beep sequence
+PASS actual USART3 drain: fragments, CRLF, multiline, DMA wrap, overflow resync, gap guard, TX timeout
+PASS: stable tick, rollover, pending UIF, uint32 wrap, invalid delay/context
+PASS: watchdog test build compiled; final normal ELF excludes m1_stall_task. Hardware watchdog timing NOT tested.

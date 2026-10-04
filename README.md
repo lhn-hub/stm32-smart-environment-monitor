@@ -1,6 +1,11 @@
 # sms-hub
 
-基于 FreeRTOS 的智能环境监测与安防联动系统。当前 M0：软件构建已验证，上板验收待完成；未进入M1。
+基于 FreeRTOS 的智能环境监测与安防联动系统。当前 M1：BSP与FreeRTOS骨架已实现，编译/主机测试通过，物理DoD待验收。下方M0章节保留作基线说明。
+
+## M1快速开始
+关闭旧Keil工程窗口后重新打开 `MDK-ARM/sms-hub.uvprojx`；运行 `Docs/build.ps1` 默认重编译M1。六任务保留原栈/优先级，heap_4=11KB，HAL时基TIM4。
+接线、每项DoD步骤和预期串口文字见 `Docs/M1-acceptance.md`。COM6 115200 8N1；业务传感器和电机不接。校准源未确认，温度显示FAULT，VDDA标称估算；不能把30~60℃项标为通过。
+构建日志 `Docs/M1-build.log`，map `Docs/M1-map.txt`，主机结果 `Docs/M1-tests.log`。30分钟和看门狗复位时间没有实测，暂不打v0.2。正式构建中故障注入宏为0；测试版步骤见验收文档。
 
 ## 工具链
 - Keil MDK 5.43.1，Arm Compiler 6.24；CubeMX CLI 6.18.1；STM32CubeF1 v1.8.7；Git2.54.0。

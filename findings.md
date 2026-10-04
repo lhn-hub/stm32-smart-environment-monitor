@@ -1,5 +1,10 @@
 # M0 前置核查记录
 
+## M1最新状态
+M1代码已实现，0错误0警告；主机实际按键/蜂鸣器、USART3解析和微秒边界测试通过。FreeRTOS10.3.1固定内核，8个任务含6业务+idle+timer。M1软件可交付，上板DoD未通过，不打v0.2；详见Docs/M1-acceptance.md。
+候选校准继续禁用；内部温度FAULT。IWDG4秒是标称约数，故障到复位还包括检测延迟和LSI容差。不得声称满足严格4s上界。
+故障注入测试构建通过；恢复宏0后的正式ELF无m1_stall_task。恢复构建时Keil工程曾被覆盖回M0分组，修复后正式全量构建通过。
+
 ## 最新状态（下方首次核查保留作历史）
 用户已确认：TIM4替代TIM6；共享EXTI优先级5；A通道不驱动；KV独立4KB扇区；SPI除8；日志末地址0x012FFF；三个校准地址仅诊断候选且默认禁用。
 源码已由CubeMX6.18.1生成并后处理；Arm Compiler6.24完整重编译0错误0警告。Flash5824B，RAM1392B。见Docs/M0-build.log、Docs/M0-map.txt及Docs/M0-tests.log。

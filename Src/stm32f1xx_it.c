@@ -20,6 +20,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "bsp_pin.h"
+#include "bsp_services.h"
 #include "stm32f1xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -89,6 +90,7 @@ void NMI_Handler(void)
   */
 void HardFault_Handler(void)
 {
+  bsp_emergency_stop(); /* No printing inside a fault ISR. */
   /* USER CODE BEGIN HardFault_IRQn 0 */
 
   /* USER CODE END HardFault_IRQn 0 */
@@ -104,6 +106,7 @@ void HardFault_Handler(void)
   */
 void MemManage_Handler(void)
 {
+  bsp_emergency_stop(); /* No printing inside a fault ISR. */
   /* USER CODE BEGIN MemoryManagement_IRQn 0 */
 
   /* USER CODE END MemoryManagement_IRQn 0 */
@@ -119,6 +122,7 @@ void MemManage_Handler(void)
   */
 void BusFault_Handler(void)
 {
+  bsp_emergency_stop(); /* No printing inside a fault ISR. */
   /* USER CODE BEGIN BusFault_IRQn 0 */
 
   /* USER CODE END BusFault_IRQn 0 */
@@ -134,6 +138,7 @@ void BusFault_Handler(void)
   */
 void UsageFault_Handler(void)
 {
+  bsp_emergency_stop(); /* No printing inside a fault ISR. */
   /* USER CODE BEGIN UsageFault_IRQn 0 */
 
   /* USER CODE END UsageFault_IRQn 0 */
@@ -147,15 +152,7 @@ void UsageFault_Handler(void)
 /**
   * @brief This function handles System service call via SWI instruction.
   */
-void SVC_Handler(void)
-{
-  /* USER CODE BEGIN SVCall_IRQn 0 */
-
-  /* USER CODE END SVCall_IRQn 0 */
-  /* USER CODE BEGIN SVCall_IRQn 1 */
-
-  /* USER CODE END SVCall_IRQn 1 */
-}
+/* SVC_Handler is implemented by the native FreeRTOS CM3 port. */
 
 /**
   * @brief This function handles Debug monitor.
@@ -173,29 +170,12 @@ void DebugMon_Handler(void)
 /**
   * @brief This function handles Pendable request for system service.
   */
-void PendSV_Handler(void)
-{
-  /* USER CODE BEGIN PendSV_IRQn 0 */
-
-  /* USER CODE END PendSV_IRQn 0 */
-  /* USER CODE BEGIN PendSV_IRQn 1 */
-
-  /* USER CODE END PendSV_IRQn 1 */
-}
+/* PendSV_Handler is implemented by the native FreeRTOS CM3 port. */
 
 /**
   * @brief This function handles System tick timer.
   */
-void SysTick_Handler(void)
-{
-  /* USER CODE BEGIN SysTick_IRQn 0 */
-
-  /* USER CODE END SysTick_IRQn 0 */
-
-  /* USER CODE BEGIN SysTick_IRQn 1 */
-
-  /* USER CODE END SysTick_IRQn 1 */
-}
+/* SysTick_Handler is implemented by the native FreeRTOS CM3 port. */
 
 /******************************************************************************/
 /* STM32F1xx Peripheral Interrupt Handlers                                    */
@@ -296,6 +276,7 @@ void USART3_IRQHandler(void)
   /* USER CODE BEGIN USART3_IRQn 0 */
 
   /* USER CODE END USART3_IRQn 0 */
+  bsp_net_idle_irq();
   HAL_UART_IRQHandler(&huart3);
   /* USER CODE BEGIN USART3_IRQn 1 */
 
