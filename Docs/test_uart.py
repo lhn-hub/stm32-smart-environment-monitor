@@ -25,13 +25,17 @@ prefix = r'''
 #define HAL_UART_STATE_READY 0
 #define HAL_OK 0
 #define UART_IT_IDLE 0
-#define LOGW(...) ((void)0)
+static unsigned warnings;
+#define LOGW(...) (++warnings)
 #define LOGE(...) ((void)0)
+#define taskENTER_CRITICAL() ((void)0)
+#define taskEXIT_CRITICAL() ((void)0)
 static struct { int gState; void *hdmarx; } huart3;
 static uint8_t rx[ESP_RX_BUF_SIZE],discard;
 static char line[APP_NET_LINE_SIZE],received[APP_NET_LINE_SIZE];
 static size_t read_pos,line_len,write_cursor;
 static uint32_t last_poll,tx_started,uart_errors,now;
+static uint32_t uart_error_bits,gap_count,error_count,error_bits,restart_failures,last_report;
 static unsigned delivered,aborted;
 #define __HAL_DMA_GET_COUNTER(x) ((void)(x),sizeof(rx)-write_cursor)
 #define __HAL_UART_ENABLE_IT(x,y) ((void)(x),(void)(y))
@@ -60,6 +64,19 @@ int main(void)
  now+=APP_NET_RING_GUARD_MS+1;bsp_net_poll();i=delivered;
  feed("bad\n");assert(delivered==i);feed("good\n");assert(!strcmp(received,"good"));
  huart3.gState=1;tx_started=now;now+=APP_NET_TX_TIMEOUT_MS;bsp_net_poll();assert(aborted==1);
+ /* Sustained hardware errors recover every poll, but report at most per5s. */
+ warnings=0;last_report=now;gap_count=error_count=error_bits=restart_failures=0;
+ for(i=0;i<200;i++) {
+   uart_errors=1;uart_error_bits=4;now+=10;write_cursor=0;bsp_net_poll();
+ }
+ assert(warnings==0 && error_count==200 && error_bits==4);
+ now+=APP_NET_DIAGNOSTIC_MS;bsp_net_poll();assert(warnings==1);
+ assert(error_count==0 && error_bits==0);
+ /* A reset ring must not drain bytes using its previous write index. */
+ delivered=0;write_cursor=5;memcpy(rx,"old\n!",5);uart_errors=1;
+ now++;bsp_net_poll();assert(delivered==0 && read_pos==0);
+ write_cursor=0;feed("discard\n");feed("fresh\n");assert(!strcmp(received,"fresh"));
+ puts("PASS: 200 consecutive errors do not flood logs; error bitmap retained; DMA restart drops stale index");
  puts("PASS actual USART3 drain: fragments, CRLF, multiline, DMA wrap, overflow resync, gap guard, TX timeout");
  return 0;
 }

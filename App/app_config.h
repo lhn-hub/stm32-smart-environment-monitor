@@ -57,6 +57,7 @@
 #define APP_NET_TX_SIZE 128u
 #define APP_NET_POLL_MS 10u
 #define APP_NET_RING_GUARD_MS 30u
+#define APP_NET_DIAGNOSTIC_MS 5000u
 #define APP_STARTUP_LIMIT_MS 15000u
 #define APP_NET_TEST_MS 2000u
 #define APP_NET_TEST_LINE "sms-hub loopback\r\n"

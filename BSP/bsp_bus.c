@@ -10,6 +10,8 @@ static uint8_t rx[ESP_RX_BUF_SIZE],tx[APP_NET_TX_SIZE];
 static char line[APP_NET_LINE_SIZE];
 static size_t read_pos,line_len;
 static volatile uint32_t idle_events,uart_errors;
+static volatile uint32_t uart_error_bits;
+static uint32_t gap_count,error_count,error_bits,restart_failures,last_report;
 static uint32_t last_poll;
 static uint32_t tx_started;
 static uint8_t discard;
@@ -63,7 +65,9 @@ void bsp_net_idle_irq(void)
     }
 }
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *uart)
-{ if(uart==&huart3) ++uart_errors; }
+{
+    if(uart==&huart3) { uart_error_bits|=uart->ErrorCode; ++uart_errors; }
+}
 int bsp_net_start(void)
 {
     MX_USART3_UART_Init(); last_poll=HAL_GetTick();
@@ -83,6 +87,14 @@ __weak void net_on_rx_line(const char *data,size_t length)
 void bsp_net_poll(void)
 {
     uint32_t now=HAL_GetTick();
+    uint32_t errors,bits;
+    /* Only a few RAM accesses under BASEPRI; no IO/delay/logging. TIM4 runs.
+     * Atomically take ISR diagnostics so a new error during restart survives.
+     */
+    taskENTER_CRITICAL();
+    errors=uart_errors; bits=uart_error_bits;
+    uart_errors=0; uart_error_bits=0;
+    taskEXIT_CRITICAL();
     if(huart3.gState!=HAL_UART_STATE_READY && now-tx_started>=APP_NET_TX_TIMEOUT_MS) {
         HAL_UART_AbortTransmit(&huart3); LOGE("串口3发送DMA超时");
     }
@@ -91,14 +103,19 @@ void bsp_net_poll(void)
     /* At115200 8N1, full512B ring lasts ~44ms. Conservative scheduling
      * gap guard discards uncertain data instead of accepting corrupted lines.
      */
-    if(now-last_poll>APP_NET_RING_GUARD_MS || uart_errors) {
+    if(now-last_poll>APP_NET_RING_GUARD_MS || errors) {
         read_pos=write_pos; line_len=0; discard=1;
-        LOGW("串口3接收间隔过长或错误，丢弃至换行");
-        if(uart_errors) {
-            uart_errors=0; HAL_UART_AbortReceive(&huart3);
-            if(HAL_UART_Receive_DMA(&huart3,rx,sizeof(rx))!=HAL_OK) LOGE("串口3重新接收失败");
+        if(now-last_poll>APP_NET_RING_GUARD_MS) ++gap_count;
+        error_count+=errors; error_bits|=bits;
+        if(errors) {
+            HAL_UART_AbortReceive(&huart3);
+            if(HAL_UART_Receive_DMA(&huart3,rx,sizeof(rx))!=HAL_OK) {
+                ++restart_failures;
+                /* Keep retry pending; do not silently leave RX stopped. */
+                taskENTER_CRITICAL(); ++uart_errors; taskEXIT_CRITICAL();
+            }
             read_pos=0; __HAL_UART_ENABLE_IT(&huart3,UART_IT_IDLE);
-            last_poll=HAL_GetTick(); return; /* old DMA write index is invalid */
+            write_pos=0; /* old DMA write index is invalid */
         }
     }
     last_poll=now;
@@ -107,7 +124,7 @@ void bsp_net_poll(void)
             /* A slow line callback can itself span a DMA lap. Drop the
              * uncertain suffix before touching any more ring bytes. */
             read_pos=(sizeof(rx)-__HAL_DMA_GET_COUNTER(huart3.hdmarx))%sizeof(rx);
-            line_len=0; discard=1; last_poll=HAL_GetTick(); return;
+            line_len=0; discard=1; ++gap_count; break;
         }
         char c=(char)rx[read_pos]; read_pos=(read_pos+1u)%sizeof(rx);
         if(c=='\n') {
@@ -117,5 +134,16 @@ void bsp_net_poll(void)
             if(line_len+1u<sizeof(line)) line[line_len++]=c;
             else { line_len=0; discard=1; }
         }
+    }
+    /* Report AFTER restoring/draining RX. Repeated errors must not produce
+     * a polling/logging feedback loop. Keep the 30ms loss guard unchanged. */
+    now=HAL_GetTick();
+    if(now-last_report>=APP_NET_DIAGNOSTIC_MS &&
+       (gap_count || error_count || restart_failures)) {
+        last_report=now;
+        LOGW("串口3汇总：超时=%lu 错误=%lu 码=0x%02lX 重启失败=%lu",
+             (unsigned long)gap_count,(unsigned long)error_count,
+             (unsigned long)error_bits,(unsigned long)restart_failures);
+        gap_count=0; error_count=0; error_bits=0; restart_failures=0;
     }
 }

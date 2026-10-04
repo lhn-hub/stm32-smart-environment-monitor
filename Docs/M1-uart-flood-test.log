@@ -1,0 +1,2 @@
+PASS: 200 consecutive errors do not flood logs; error bitmap retained; DMA restart drops stale index
+PASS actual USART3 drain: fragments, CRLF, multiline, DMA wrap, overflow resync, gap guard, TX timeout
