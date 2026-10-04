@@ -6,6 +6,7 @@
 #include "semphr.h"
 #include <stdio.h>
 #include <stdarg.h>
+#include <string.h>
 static SemaphoreHandle_t log_lock;
 /* Fault hooks may run with an unusable task stack / RTOS critical section.
  * Preserve the reason for the debugger even when UART output is forbidden. */
@@ -27,6 +28,18 @@ int bsp_console_init(void)
     return log_lock ? 0 : -1;
 }
 
+static const char *display_task(void)
+{
+    const char *name=pcTaskGetName(NULL);
+    if(!strcmp(name,"MonitorTask")) return "监控任务";
+    if(!strcmp(name,"AlarmTask")) return "告警任务";
+    if(!strcmp(name,"NetTask")) return "网络任务";
+    if(!strcmp(name,"SensorTask")) return "采集任务";
+    if(!strcmp(name,"MenuTask")) return "菜单任务";
+    if(!strcmp(name,"LogTask")) return "日志任务";
+    return name;
+}
+
 void bsp_log(const char *level, const char *format, ...)
 {
     va_list args;
@@ -35,7 +48,7 @@ void bsp_log(const char *level, const char *format, ...)
     if (running && xSemaphoreTake(log_lock, pdMS_TO_TICKS(APP_LOG_LOCK_MS)) != pdTRUE)
         return;
     printf("[%lu][%s][%s] ", (unsigned long)HAL_GetTick(),
-           running ? pcTaskGetName(NULL) : "boot", level);
+           running ? display_task() : "启动", level);
     va_start(args, format);
     vprintf(format, args);
     va_end(args);

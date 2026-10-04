@@ -76,7 +76,7 @@ int bsp_rtc_start(void)
     while(!__HAL_RCC_GET_FLAG(RCC_FLAG_LSERDY)) {
         if((uint32_t)(HAL_GetTick()-start)>=APP_LSE_TIMEOUT_MS) {
             source=RCC_RTCCLKSOURCE_LSI; divider=BSP_LSI_NOMINAL_HZ;
-            LOGW("RTC LSE timeout; LSI fallback (approximate seconds)"); break;
+            LOGW("RTC外部低速晶振超时，回退LSI(秒计时为近似值)"); break;
         }
         vTaskDelay(1);
     }
@@ -105,7 +105,7 @@ int bsp_rtc_start(void)
     RTC->PRLH=(divider-1u)>>16; RTC->PRLL=(divider-1u)&0xffffu;
     RTC->CRL&=~RTC_CRL_CNF;
     if(wait_rtc(RTC_CRL_RTOFF)) return -1;
-    LOGI("RTC source=%s unix=%lu (set epoch before use)",source==RCC_RTCCLKSOURCE_LSE?"LSE":"LSI",(unsigned long)rtc_get());
+    LOGI("RTC时钟=%s 时间戳=%lu(使用前需校时)",source==RCC_RTCCLKSOURCE_LSE?"LSE":"LSI",(unsigned long)rtc_get());
     return 0;
 }
 int bsp_watchdog_start(void)

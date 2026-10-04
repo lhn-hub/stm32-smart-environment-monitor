@@ -46,15 +46,15 @@ void i2c_scan(void)
 {
     unsigned a,count=0;
     if(HAL_GPIO_ReadPin(OLED_SDA_PORT,OLED_SDA_PIN)==GPIO_PIN_RESET && bsp_i2c_recover()) {
-        LOGE("I2C stuck after recovery"); return;
+        LOGE("I2C恢复后仍锁死"); return;
     }
     for(a=APP_I2C_FIRST_ADDR;a<=APP_I2C_LAST_ADDR;a++) {
         if(HAL_I2C_IsDeviceReady(&hi2c1,a<<1,1,APP_I2C_TIMEOUT_MS)==HAL_OK) {
-            LOGI("I2C 0x%02X",a); ++count;
+            LOGI("I2C在线地址=0x%02X",a); ++count;
         }
         vTaskDelay(1);
     }
-    LOGI("I2C scan count=%u",count);
+    LOGI("I2C扫描完成，设备数=%u",count);
 }
 void bsp_net_idle_irq(void)
 {
@@ -79,12 +79,12 @@ int bsp_net_send(const void *data,size_t length)
     return HAL_UART_Transmit_DMA(&huart3,tx,(uint16_t)length)==HAL_OK?0:-1;
 }
 __weak void net_on_rx_line(const char *data,size_t length)
-{ (void)length; LOGI("USART3 RX: %s",data); }
+{ (void)length; LOGI("串口3接收：%s",data); }
 void bsp_net_poll(void)
 {
     uint32_t now=HAL_GetTick();
     if(huart3.gState!=HAL_UART_STATE_READY && now-tx_started>=APP_NET_TX_TIMEOUT_MS) {
-        HAL_UART_AbortTransmit(&huart3); LOGE("USART3 TX DMA timeout");
+        HAL_UART_AbortTransmit(&huart3); LOGE("串口3发送DMA超时");
     }
     size_t write_pos=sizeof(rx)-__HAL_DMA_GET_COUNTER(huart3.hdmarx);
     write_pos%=sizeof(rx);
@@ -93,10 +93,10 @@ void bsp_net_poll(void)
      */
     if(now-last_poll>APP_NET_RING_GUARD_MS || uart_errors) {
         read_pos=write_pos; line_len=0; discard=1;
-        LOGW("USART3 RX gap/error; discard through newline");
+        LOGW("串口3接收间隔过长或错误，丢弃至换行");
         if(uart_errors) {
             uart_errors=0; HAL_UART_AbortReceive(&huart3);
-            if(HAL_UART_Receive_DMA(&huart3,rx,sizeof(rx))!=HAL_OK) LOGE("USART3 restart failed");
+            if(HAL_UART_Receive_DMA(&huart3,rx,sizeof(rx))!=HAL_OK) LOGE("串口3重新接收失败");
             read_pos=0; __HAL_UART_ENABLE_IT(&huart3,UART_IT_IDLE);
             last_poll=HAL_GetTick(); return; /* old DMA write index is invalid */
         }

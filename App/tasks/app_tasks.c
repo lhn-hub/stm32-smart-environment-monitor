@@ -34,13 +34,13 @@ static void worker(void *argument)
         if(id!=0 && m1_stall_task==id) vTaskSuspend(NULL);
 #endif
         if(!started) {
-            if(id==2 && bsp_net_start()) bsp_panic("USART3 init");
+            if(id==2 && bsp_net_start()) bsp_panic("串口3初始化失败");
             if(id==3) {
-                if(bsp_adc_start()) bsp_panic("ADC init");
-                if(bsp_rtc_start()) LOGE("RTC init failed");
+                if(bsp_adc_start()) bsp_panic("ADC初始化失败");
+                if(bsp_rtc_start()) LOGE("RTC初始化失败");
                 i2c_scan();
             }
-            if(id==4 && bsp_controls_init()) bsp_panic("controls init");
+            if(id==4 && bsp_controls_init()) bsp_panic("控制服务初始化失败");
             started=1;
             /* Only short RAM bookkeeping in critical sections. BASEPRI masks
              * priority>=5; TIM4=4 still runs. No IO/delay/printf while masked.
@@ -52,9 +52,9 @@ static void worker(void *argument)
         if(id==0) {
             const EventBits_t all=(1u<<APP_TASK_COUNT)-1u;
             unsigned i; int healthy=1;
-            if(ready!=all && now-boot>APP_STARTUP_LIMIT_MS) bsp_panic("startup timeout");
+            if(ready!=all && now-boot>APP_STARTUP_LIMIT_MS) bsp_panic("启动超时");
             if(!wd && ready==all) {
-                if(bsp_watchdog_start()) bsp_panic("IWDG init");
+                if(bsp_watchdog_start()) bsp_panic("看门狗初始化失败");
                 wd=1;
             }
             if(wd) {
@@ -69,24 +69,24 @@ static void worker(void *argument)
             bsp_net_poll();
             if(now-last_tx>=APP_NET_TEST_MS) {
                 last_tx=now;
-                if(bsp_net_send(APP_NET_TEST_LINE,sizeof(APP_NET_TEST_LINE)-1u)) LOGW("USART3 TX busy");
+                if(bsp_net_send(APP_NET_TEST_LINE,sizeof(APP_NET_TEST_LINE)-1u)) LOGW("串口3发送忙");
             }
         }
         if(id==4) {
             key_event_t e;
             while(bsp_key_get(&e)) {
-                LOGI("KEY src=%u action=%s tick=%lu",(unsigned)e.source,
-                     e.action==KEY_LONG?"LONG":"CLICK",(unsigned long)e.tick);
+                LOGI("按键=%u 动作=%s 时刻=%lu",(unsigned)e.source,
+                     e.action==KEY_LONG?"长按":"单击",(unsigned long)e.tick);
                 if(e.source==KEY_CONFIRM && e.action==KEY_CLICK) beep_ms(APP_KEY_DEBOUNCE_MS);
             }
         }
         if(now-last_status>=APP_STATUS_MS) {
             unsigned free=(unsigned)uxTaskGetStackHighWaterMark(NULL);
             last_status=now;
-            LOGI("alive stack_free=%u/%u (%u%%)",free,stacks[id],free*100u/stacks[id]);
-            if(id==3) LOGI("MCU_TEMP=FAULT calibration=disabled VDDA=%lumV nominal RTC=%lu",
+            LOGI("运行正常 栈剩余=%u/%u字 (%u%%)",free,stacks[id],free*100u/stacks[id]);
+            if(id==3) LOGI("芯片温度=不可用 校准=禁用 VDDA=%lumV(标称估算) RTC=%lu",
                 (unsigned long)vdda_mv_get(),(unsigned long)rtc_get());
-            if(id==0) LOGI("heap_free=%u watchdog_trip=%lu",(unsigned)xPortGetFreeHeapSize(),(unsigned long)watchdog_tripped);
+            if(id==0) LOGI("堆剩余=%u字节 看门狗故障=%lu",(unsigned)xPortGetFreeHeapSize(),(unsigned long)watchdog_tripped);
         }
         vTaskDelay(pdMS_TO_TICKS(id==2?APP_NET_POLL_MS:id==4?APP_MENU_PERIOD_MS:APP_MONITOR_PERIOD_MS));
     }
@@ -94,14 +94,14 @@ static void worker(void *argument)
 void app_start(void)
 {
     unsigned i;
-    if(bsp_services_init()) bsp_panic("services init");
+    if(bsp_services_init()) bsp_panic("板级服务初始化失败");
     heartbeats=xEventGroupCreate();
-    if(!heartbeats) bsp_panic("heartbeat allocation");
+    if(!heartbeats) bsp_panic("心跳内存分配失败");
     for(i=0;i<APP_TASK_COUNT;i++)
         if(xTaskCreate(worker,names[i],stacks[i],(void *)(uintptr_t)i,priorities[i],&handles[i])!=pdPASS)
-            bsp_panic("task allocation");
-    vTaskStartScheduler(); bsp_panic("scheduler returned");
+            bsp_panic("任务创建失败");
+    vTaskStartScheduler(); bsp_panic("调度器启动失败");
 }
-void vApplicationMallocFailedHook(void) { bsp_panic("malloc failed"); }
+void vApplicationMallocFailedHook(void) { bsp_panic("内存分配失败"); }
 void vApplicationStackOverflowHook(TaskHandle_t task,char *name)
-{ (void)task; (void)name; bsp_panic("stack overflow"); }
+{ (void)task; (void)name; bsp_panic("任务栈溢出"); }

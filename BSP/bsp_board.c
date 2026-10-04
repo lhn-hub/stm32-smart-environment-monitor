@@ -21,6 +21,7 @@ void bsp_safe_state(void)
     HAL_GPIO_WritePin(TB_BIN2_PORT,TB_BIN2_PIN,TB_SAFE_LEVEL);
     HAL_GPIO_WritePin(BUZZER_GPIO_PORT,BUZZER_PIN,BUZZER_OFF_LEVEL);
     TIM3->CCR4=FAN_SAFE_CCR;
+    HAL_GPIO_WritePin(RGB_R_PORT,RGB_R_PIN|RGB_G_PIN|RGB_B_PIN,RGB_OFF_LEVEL);
     TIM2->CCR2=0; TIM2->CCR3=0; TIM2->CCR4=0;
 }
 
@@ -32,16 +33,16 @@ void bsp_board_init(void)
     __HAL_RCC_GPIOB_CLK_ENABLE();
     __HAL_RCC_GPIOC_CLK_ENABLE();
     __HAL_AFIO_REMAP_SWJ_NOJTAG();
-    if(HAL_RCC_GetHCLKFreq()!=BSP_SYSCLK_HZ) bsp_panic("clock !=72MHz");
+    if(HAL_RCC_GetHCLKFreq()!=BSP_SYSCLK_HZ) bsp_panic("系统时钟不是72MHz");
     MX_GPIO_Init();
     /* No PWM on A channel. Keep PA5/PA7 low until an owner takes SPI. */
     HAL_GPIO_WritePin(TB_AIN1_PORT,TB_AIN1_PIN|TB_BIN1_PIN,GPIO_PIN_RESET);
     gpio.Pin=TB_AIN1_PIN|TB_BIN1_PIN; gpio.Mode=GPIO_MODE_OUTPUT_PP;
     gpio.Speed=GPIO_SPEED_FREQ_LOW; HAL_GPIO_Init(TB_AIN1_PORT,&gpio);
     bsp_safe_state();
-    /* M0: static GPIO level only. Confirm RGB polarity on the real board. */
+    /* Active-low LEDs: high GPIO is off before PWM takes ownership. */
     HAL_GPIO_WritePin(RGB_R_PORT, RGB_R_PIN | RGB_G_PIN | RGB_B_PIN,
-                      GPIO_PIN_RESET);
+                      RGB_OFF_LEVEL);
     gpio.Pin = RGB_R_PIN | RGB_G_PIN | RGB_B_PIN;
     gpio.Mode = GPIO_MODE_OUTPUT_PP;
     gpio.Pull = GPIO_NOPULL;
@@ -65,9 +66,9 @@ int bsp_services_init(void)
         gpio.Speed=GPIO_SPEED_FREQ_LOW; HAL_GPIO_Init(TB_BIN1_PORT,&gpio);
     }
     bsp_safe_state();
-    LOGI("sms-hub %s reset_IWDG=%u",APP_FW_VERSION,
+    LOGI("sms-hub %s 看门狗复位=%u",APP_FW_VERSION,
          __HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST)?1u:0u);
     __HAL_RCC_CLEAR_RESET_FLAGS();
-    LOGW("ADC calibration DISABLED: candidate addresses unverified; TEMP=FAULT VDDA=nominal");
+    LOGW("ADC校准禁用：候选地址未验证；温度不可用，VDDA为标称估算");
     return 0;
 }

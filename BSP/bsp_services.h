@@ -13,9 +13,9 @@ int bsp_is_faulted(void);
 void bsp_panic(const char *reason);
 /** @brief Task-only serialized printf log. No floating point formats. */
 void bsp_log(const char *level, const char *format, ...);
-#define LOGI(...) bsp_log("I", __VA_ARGS__)
-#define LOGW(...) bsp_log("W", __VA_ARGS__)
-#define LOGE(...) bsp_log("E", __VA_ARGS__)
+#define LOGI(...) bsp_log("信息", __VA_ARGS__)
+#define LOGW(...) bsp_log("警告", __VA_ARGS__)
+#define LOGE(...) bsp_log("错误", __VA_ARGS__)
 /** @brief Set RGB PWM duties; reject values outside 0..999. */
 int rgb_set(uint16_t r, uint16_t g, uint16_t b);
 typedef struct { uint16_t on_ms, off_ms; uint8_t repeat; } beep_pattern_t;

@@ -4,7 +4,7 @@ import os
 import subprocess
 
 root = Path(__file__).resolve().parents[1]
-source = (root / 'BSP/bsp_bus.c').read_text()
+source = (root / 'BSP/bsp_bus.c').read_text(encoding='utf-8')
 start = source.index('void bsp_net_poll(void)')
 brace = source.index('{', start)
 depth = 1
@@ -67,7 +67,7 @@ int main(void)
 # Raw Python strings above intentionally contain C escapes.
 suffix = suffix.replace('\\\\', '\\')
 out = root / 'tmp/test_uart.c'
-out.write_text(prefix + function + suffix)
+out.write_text(prefix + function + suffix, encoding='utf-8')
 env = dict(os.environ)
 env['PATH'] = 'D:/msys64/ucrt64/bin;' + env['PATH']
 exe = root / 'tmp/test_uart.exe'

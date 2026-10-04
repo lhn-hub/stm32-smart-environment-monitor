@@ -161,7 +161,7 @@ void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
-  bsp_panic("HAL failure");
+  bsp_panic("HAL初始化失败");
   while (1)
   {
   }

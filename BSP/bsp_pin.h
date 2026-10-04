@@ -67,7 +67,9 @@ extern "C" {
 #define BSP_DEBUG_RX_PORT          GPIOA
 #define BSP_DEBUG_RX_PIN           GPIO_PIN_10
 
-/* RGB: TIM2 CH2/3/4, 1 kHz. Electrical polarity requires board check. */
+/* RGB: TIM2 CH2/3/4, 1 kHz. Active low, confirmed by schematic page 3 and board feedback. */
+#define RGB_OFF_LEVEL GPIO_PIN_SET
+#define RGB_PWM_POLARITY TIM_OCPOLARITY_LOW
 #define RGB_TIM                   htim2
 #define RGB_R_PORT                GPIOA
 #define RGB_R_PIN                 GPIO_PIN_1
