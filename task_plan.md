@@ -1,0 +1,31 @@
+# sms-hub M0 工程脚手架
+
+## Goal
+按用户 M0、附件 A/B 完成 CubeMX/Keil 工程，真实编译与 DAP 验证后提交并标记 v0.1。
+
+## Current Phase
+M0 软件构建及静态核查完成；DAP实物下载与自动运行验收待完成。
+
+### Phase 1: 工具链与硬件约束核查
+**Status:** complete
+- 已读取用户附件并列出手工硬件检查清单。
+- 已确认芯片无 TIM6，共享 EXTI 向量不支持按线路独立分配 NVIC 优先级。
+- 已检测 Keil、CubeMX、Git；固件包位置与 DAP 实物连接仍需确认。
+
+### Phase 2: 生成工程与配置集中化
+**Status:** complete
+- 在用户确认冲突处理后生成工程、建立目录与配置头文件。
+
+### Phase 3: 编译、下载、提交与验收
+**Status:** in_progress
+- 保留 0 warning 编译日志、map 数据和 DAP 自动运行证据。
+- 完成后提交 [M0] 工程:建立脚手架，打 tag v0.1。
+
+## Next Step
+用户连接DAP/核心板，实测下载、Reset and Run及独立复位运行；通过后标记v0.1。
+
+## Errors Encountered
+- 初次技能读取输出被截断，后续分段补读。
+- 初次工具检查将不同类型对象混合表格输出，后续改用 JSON/完整路径。
+- 初次设备过滤 DAP 误匹配 Adapter，后续使用精确标识过滤。
+- CubeMX 配置搜索范围过大命中数据库元数据，输出截断；不依据该搜索断言固件包安装状态。

@@ -1,0 +1,172 @@
+===PAGE 235===
+RM0008 Rev 21 235/1136
+RM0008 Analog-to-digital converter (ADC)
+253
+Figure 38. Interleaved single channel with injected sequence CH11, CH12
+11.10 Temperature sensor
+The temperature sensor can be used to measure the junction temperature (TJ) of the 
+device.
+The temperature sensor is internally connected to the ADCx_IN16 input channel which is 
+used to convert the sensor output voltage into a digital value. The recommended sampling 
+time for the temperature sensor is 17.1 µs.
+The block diagram of the temperature sensor is shown in Figure 39.
+When not in use, this sensor can be put in power down mode. 
+Note: The TSVREFE bit must be set to enable bo th internal channels: ADCx_IN16 (temperature 
+sensor) and ADCx_IN17 (V
+REFINT) conversion.
+The temperature sensor output voltage changes linearly with temperature. The offset of this 
+line varies from chip to chip due to process variations (up to 45 °C from one chip to another). 
+The internal temperature sensor is more suited to applications that detect temperature 
+variations instead of absolute temperatures. If accurate temperature readings are needed, 
+an external temperature sensor part should be used.
+Figure 39. Temperature sensor and VREFINT channel block diagram
+CH0
+ADC2
+ADC1
+Trigger
+Conversion
+Sampling
+CH0 CH0
+CH0 CH0 CH0
+CH11 CH12
+CH12 CH11
+CH0 CH0
+CH0 CH0
+MS35936V2
+Temperature  
+sensor
+VSENSE
+TSVREFE control bit
+ADC1
+Address/data busVREFINT
+ADC1_IN16
+Internal
+power block ADC1_IN17
+Converted data
+===PAGE 236===
+Analog-to-digital converter (ADC) RM0008
+236/1136 RM0008 Rev 21
+Reading the temperature
+To use the sensor:
+1. Select the ADCx_IN16 input channel.
+2. Select a sample time of 17.1 µs
+3. Set the TSVREFE bit in the ADC control register 2 (ADC_CR2) to wake up the 
+temperature sensor from power down mode.
+4. Start the ADC conversion by setting the ADON bit (or by external trigger).
+5. Read the resulting V
+SENSE data in the ADC data register
+6. Obtain the temperature using the following formula:
+Temperature (in °C) = {(V25 - VSENSE) / Avg_Slope} + 25.
+Where, 
+V
+25 = VSENSE value for 25° C and
+Avg_Slope = Average Slope for curve between Temperature vs. VSENSE (given in 
+mV/° C or µV/ °C). 
+Refer to the Electrical characteristics section for the actual values of V25 and 
+Avg_Slope.
+Note: The sensor has a startup time after waki ng from power down mode before it can output 
+VSENSE at the correct level. The ADC also has a startup time after power-on, so to minimize 
+the delay, the ADON and TSVREFE bits should be set at the same time.
+11.11 ADC interrupts
+An interrupt can be produced on end of conversion for regular and injected groups and 
+when the analog watchdog status bit is set. Separate interrupt enable bits are available for 
+flexibility.
+Note: ADC1 and ADC2 interrupts are mapped onto the same interrupt vector. ADC3 interrupts are 
+mapped onto a separate interrupt vector.
+Two other flags are present in the ADC_SR register, but there is no interrupt associated with 
+them:
+ JSTRT (Start of conversion for injected group channels)
+ STRT (Start of conversion for regular group channels)
+         
+Table 71. ADC interrupts
+Interrupt event E vent flag Enable Control bit
+End of conversion regular group EOC EOCIE
+End of conversion injected group JEOC JEOCIE
+Analog watchdog status bit is set AWD AWDIE
+===PAGE 1076===
+Device electronic signature RM0008
+1076/1136 RM0008 Rev 21
+30 Device electronic signature
+Low-density devices are STM32F101xx, STM32F102xx and STM32F103xx 
+microcontrollers where the Flash memory density ranges between 16 and 32 Kbytes.
+Medium-density devices are STM32F101xx, STM32F102xx and STM32F103xx 
+microcontrollers where the Flash memory density ranges between 64 and 128 Kbytes.
+High-density devices are STM32F101xx and STM32F103xx microcontrollers where the 
+Flash memory density ranges between 256 and 512 Kbytes.
+XL-density devices are STM32F101xx and STM32F103xx microcontrollers where the 
+Flash memory density ranges between 768 Kbytes and 1 Mbyte.
+Connectivity line devices are STM32F105xx and STM32F107xx microcontrollers.
+This section applies to the whole STM32F10xxx family, unless otherwise specified.
+The electronic signature is stored in the System memory area in the Flash memory module, 
+and can be read using the JTAG/SWD or the CPU. It contains factory-programmed 
+identification data that allow the user firmware or other external devices to automatically 
+match its interface to the characteristics of the STM32F10xxx microcontroller.
+30.1 Memory size registers
+30.1.1 Flash size register
+Base address: 0x1FFF F7E0
+Read only = 0xXXXX where X is factory-programmed
+         
+         
+15 14 13 12 11 10 9 8 7 6 5 4 3 2 1 0
+F_SIZE
+rrrrrrrrrrrrrrrr
+Bits 15:0 F_SIZE: Flash memory size
+This field value indicates the Flash memory size of the device in Kbytes.
+Example: 0x0080 = 128 Kbytes.
+===PAGE 1077===
+RM0008 Rev 21 1077/1136
+RM0008 Device electronic signature
+1078
+30.2 Unique device ID register (96 bits)
+The unique device identifier is ideally suited:
+ for use as serial numbers (for example USB string serial numbers or other end 
+applications)
+ for use as security keys in order to increase the security of code in Flash memory while 
+using and combining this unique ID with software cryptographic primitives and 
+protocols before programming the internal Flash memory
+ to activate secure boot processes, etc.
+The 96-bit unique device identifier provides a reference number which is unique for any 
+device and in any context. These bits can never be altered by the user.
+The 96-bit unique device identifier can also be read in single bytes/half-words/words in 
+different ways and then be concatenated using a custom algorithm.
+Base address: 0x1FFF F7E8
+Address offset: 0x00
+Read only = 0xXXXX where X is factory-programmed
+         
+Address offset: 0x02
+Read only = 0xXXXX where X is factory-programmed
+         
+Address offset: 0x04
+Read only = 0xXXXX XXXX where X is factory-programmed
+         
+         
+1 5 1 4 1 3 1 2 1 1 1 0 9876543210
+U_ID(15:0)
+rrrrrrrrrrrrrrrr
+Bits 15:0 U_ID(15:0): 15:0 unique ID bits
+1 5 1 4 1 3 1 2 1 1 1 0 9876543210
+U_ID(31:16)
+rrrrrrrrrrr rrrrr
+Bits 15:0 U_ID(31:16): 31:16 unique ID bits
+This field value is also reserved for a future feature.
+31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16
+U_ID(63:48)
+rrrrrrrrrrrrrrrr
+15 14 13 12 11 10 9 8 7 6 5 4 3 2 1 0
+U_ID(47:32)
+rrrrrrrrrrrrrrrr
+Bits 31:0 U_ID(63:32): 63:32 unique ID bits
+===PAGE 1078===
+Device electronic signature RM0008
+1078/1136 RM0008 Rev 21
+Address offset: 0x08
+Read only = 0xXXXX XXXX where X is factory-programmed
+         
+         
+31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16
+U_ID(95:80)
+rrrrrrrrrrrrrrrr
+1 5 1 4 1 3 1 2 1 1 1 0 9876543210
+U_ID(79:64)
+rrrrrrrrrrrrrrrr
+Bits 31:0 U_ID(95:64): 95:64 Unique ID bits.
