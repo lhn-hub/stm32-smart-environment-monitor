@@ -4,6 +4,7 @@
 #include "task.h"
 #include "event_groups.h"
 #include <stdio.h>
+#include "menu.h"
 int bsp_adc_start(void);
 int bsp_rtc_start(void);
 int bsp_net_start(void);
@@ -27,7 +28,7 @@ static void worker(void *argument)
 {
     unsigned id=(unsigned)(uintptr_t)argument;
     uint32_t last_status=0,last_tx=0,boot=HAL_GetTick();
-    int started=0,wd=0;
+    int started=0,wd=0,ui_started=0;
     for(;;) {
         uint32_t now=HAL_GetTick();
 #if APP_WATCHDOG_TEST_ENABLED
@@ -74,12 +75,14 @@ static void worker(void *argument)
         }
         if(id==4) {
             key_event_t e;
+            if(!ui_started && (ready&(1u<<3))) { menu_init(); ui_started=1; }
             while(bsp_key_get(&e)) {
                 LOGI("按键=%u 动作=%s 时刻=%lu",(unsigned)e.source,
                      e.action==KEY_LONG?"长按":"单击",(unsigned long)e.tick);
-                if(e.source==KEY_CONFIRM && e.action==KEY_CLICK) beep_ms(APP_KEY_DEBOUNCE_MS);
+                if(ui_started) menu_key(&e);
             }
         }
+        if(id==4 && ui_started) menu_poll();
         if(now-last_status>=APP_STATUS_MS) {
             unsigned free=(unsigned)uxTaskGetStackHighWaterMark(NULL);
             last_status=now;

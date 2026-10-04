@@ -1,6 +1,7 @@
 #include "bsp_services.h"
 #include "app_config.h"
 #include "tim.h"
+#include "ec11.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
@@ -45,6 +46,7 @@ int bsp_key_get(key_event_t *event)
 void HAL_GPIO_EXTI_Callback(uint16_t pin)
 {
     BaseType_t wake=pdFALSE;
+    if(pin==EC11_A_PIN || pin==EC11_B_PIN) { ec11_irq(); return; }
     /* ISR only records edges. No delays, printing or flash operations.
      * M1 task/timer samples releases because original EXTI is rising-only.
      */

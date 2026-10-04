@@ -35,7 +35,7 @@ uint32_t vdda_mv_get(void);
 /** @brief Read/write RTC counter as Unix seconds; SensorTask is sole set owner. */
 uint32_t rtc_get(void);
 int rtc_set(uint32_t seconds);
-/** @brief SensorTask-only bounded recovery with up to nine SCL clocks; no concurrent I2C clients. */
+/** @brief Owner-task-only recovery: SensorTask during startup, MenuTask after handoff; never concurrent. */
 int bsp_i2c_recover(void);
 /** @brief Scan legal 7-bit addresses and print results in task context. */
 void i2c_scan(void);

@@ -18,6 +18,9 @@ typedef struct { unsigned size,count,head,tail,capacity; uint8_t data[256]; } *Q
 static unsigned pins[3],now,pwm[3],buzz;
 static int htim2;
 static int fault;
+void ec11_irq(void) {}
+#define EC11_A_PIN 16u
+#define EC11_B_PIN 32u
 int bsp_is_faulted(void) { return fault; }
 void bsp_safe_state(void) { buzz=0; memset(pwm,0,sizeof(pwm)); }
 #define KEY_WAKEUP_GPIO_PORT ((GPIO_TypeDef*)0)

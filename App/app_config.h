@@ -1,7 +1,7 @@
 #ifndef APP_CONFIG_H
 #define APP_CONFIG_H
 #include "bsp_pin.h"
-#define APP_FW_VERSION "0.2.0-dev"
+#define APP_FW_VERSION "0.3.0-dev"
 #define APP_WIFI_SSID ""
 #define APP_WIFI_PASSWORD ""
 #define APP_MQTT_HOST "broker.emqx.io"
@@ -58,6 +58,27 @@
 #define APP_NET_POLL_MS 10u
 #define APP_NET_RING_GUARD_MS 30u
 #define APP_NET_DIAGNOSTIC_MS 5000u
+#define APP_OLED_WIDTH 128u
+#define APP_OLED_HEIGHT 64u
+#define APP_OLED_PAGES 8u
+#define APP_OLED_FRAME_MS 80u
+#define APP_OLED_RETRY_MS 500u
+#define APP_OLED_TIMEOUT_MS 8u
+#define APP_OLED_CHUNK 32u
+#define APP_EC11_RING_SIZE 64u
+#define APP_EC11_EDGES_PER_DETENT 4
+#define APP_MENU_STACK_DEPTH 3u
+#define APP_MENU_ROWS 5u
+#define APP_EDIT_ACCEL 10
+#define APP_EDIT_ACCEL_MS 3000u
+#define APP_EDIT_MAX_TEMP 100
+#define APP_EDIT_MAX_DISTANCE 500
+#define APP_EDIT_MAX_CONFIRM_MS 60000
+#define APP_MENU_BEEP_MS 100u
+#define APP_UI_ROWS_Y 16
+#define APP_UI_ROW_HEIGHT 8
+#define APP_UI_STATUS_X 66
+#define APP_UI_STATUS_STEP 12
 #define APP_STARTUP_LIMIT_MS 15000u
 #define APP_NET_TEST_MS 2000u
 #define APP_NET_TEST_LINE "sms-hub loopback\r\n"

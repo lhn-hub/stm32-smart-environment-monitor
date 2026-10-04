@@ -4,7 +4,7 @@
 按用户 M0、附件 A/B 完成 CubeMX/Keil 工程，真实编译与 DAP 验证后提交并标记 v0.1。
 
 ## Current Phase
-2026-10-05用户确认“验收完毕”；记录M1验收并发布v0.2，等待M2任务。
+M2软件实现、编译和主机测试完成；等待上板20格、页面、恢复、无闪烁与帧率验收。
 
 ### Phase 1: 工具链与硬件约束核查
 **Status:** complete
@@ -22,7 +22,13 @@
 - 完成后提交 [M0] 工程:建立脚手架，打 tag v0.1。
 
 ## Next Step
-等待用户提供M2任务，不提前实施后续阶段。
+用户按Docs/M2-acceptance.md验证实板；通过后创建v0.3。
+
+### Phase 5: M2 OLED、EC11与菜单
+**Status:** in_progress
+- 静态1KB framebuffer、脏页刷新、ASCII/中文小字库。
+- 编码器边沿快照通知，任务上下文4态解码；菜单3级栈。
+- 编译/主机验证后交付上板20格、帧率、恢复测试；v0.3待验收。
 
 ### Phase 4: M1 BSP与FreeRTOS骨架
 **Status:** complete

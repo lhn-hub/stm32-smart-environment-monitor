@@ -1,4 +1,4 @@
-param([ValidateSet('M0','M1')][string]$Stage='M1')
+param([ValidateSet('M0','M1','M2')][string]$Stage='M2')
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
 $fso = New-Object -ComObject Scripting.FileSystemObject
