@@ -94,9 +94,9 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(BSP_GPIO_PORT_B, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PA11 PA12 */
+  /* EC11 removed: PA11/PA12 unused inputs, no EXTI. */
   GPIO_InitStruct.Pin = BSP_GPIO_PIN_11|BSP_GPIO_PIN_12;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(BSP_GPIO_PORT_A, &GPIO_InitStruct);
 

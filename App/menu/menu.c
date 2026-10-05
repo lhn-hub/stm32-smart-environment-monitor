@@ -1,6 +1,5 @@
 #include "menu.h"
 #include "ssd1306.h"
-#include "ec11.h"
 #include "oled_ui.h"
 #include "app_config.h"
 #include "FreeRTOS.h"
@@ -14,7 +13,6 @@ static int editing,armed;
 static int values[4]={DEF_TEMP_ALARM_C_X10/10,DEF_INTRUSION_DIST_CM,DEF_SMOKE_CONFIRM_MS,DEF_AIR_CONFIRM_MS};
 static const int maxima[4]={APP_EDIT_MAX_TEMP,APP_EDIT_MAX_DISTANCE,APP_EDIT_MAX_CONFIRM_MS,APP_EDIT_MAX_CONFIRM_MS};
 static uint32_t deadline,last_report,frames,accelerate_until;
-static int32_t encoder_total;
 static char text[48];
 static void no_op(void) {}
 static page_id current(void) { return stack[depth]; }
@@ -42,7 +40,7 @@ static void render_home(void)
     oled_text(0,16,"T:--.-C H:--%",0);oled_text(0,24,"Smoke:-- Air:--",0);
     oled_text(0,32,"Dist:---cm Human:--",0);
     snprintf(text,sizeof(text),"UTC %02lu:%02lu:%02lu",(unsigned long)(seconds/3600u%24u),(unsigned long)(seconds/60u%60u),(unsigned long)(seconds%60u));
-    oled_text(0,40,text,0);oled_text(0,56,"PB15:MENU PC13:BACK",0);
+    oled_text(0,40,text,0);oled_text(0,56,"KEY1:NEXT PB15:OK",0);
 }
 static const char *root_labels[]={"Home","Arm","Thresholds","Manual Test","Network","Event Log","System","About"};
 static void render_list(const char *title,const char *const *labels,unsigned count)
@@ -60,7 +58,7 @@ static void render_arm(void)
 static const char *threshold_labels[]={"Temp C","Distance cm","Smoke ms","Air ms"};
 static void render_thresholds(void)
 {
-    unsigned i;header(editing?"EDIT  HOLD:+FAST":"THRESHOLDS");
+    unsigned i;header(editing?"EDIT KEY1:+ HOLD:-":"THRESHOLDS");
     for(i=0;i<4;i++){snprintf(text,sizeof(text),"%s:%d",threshold_labels[i],values[i]);row(i,text,i==selected[THRESHOLDS]);}
     if(editing){unsigned s=selected[THRESHOLDS];ui_progress(0,52,128,9,values[s],maxima[s]);}
 }
@@ -105,33 +103,35 @@ static const page_t pages[PAGE_COUNT]={
  {no_op,no_op,render_arm,select_key},{no_op,no_op,render_thresholds,select_key},
  {no_op,no_op,render_manual,select_key},{no_op,no_op,render_network,select_key},
  {no_op,no_op,render_log,select_key},{no_op,no_op,render_system,select_key},{no_op,no_op,render_about,select_key}};
-void menu_init(void){depth=0;stack[0]=HOME;ec11_start();(void)oled_init();deadline=HAL_GetTick();last_report=deadline;frames=0;}
+void menu_init(void){depth=0;stack[0]=HOME;(void)oled_init();deadline=HAL_GetTick();last_report=deadline;frames=0;}
+static void navigate(int steps)
+{
+    uint32_t now=HAL_GetTick();page_id id=current();
+    if(id==HOME){push(ROOT);return;}
+    if(steps){
+        if(id==THRESHOLDS && editing){unsigned s=selected[id];int gain=(int32_t)(accelerate_until-now)>0?APP_EDIT_ACCEL:1;
+            values[s]+=steps*gain;if(values[s]<0)values[s]=0;if(values[s]>maxima[s])values[s]=maxima[s];}
+        else {int count=id==ROOT?8:id==THRESHOLDS?4:id==MANUAL?9:1;int n=(int)selected[id]+steps;
+            if(n<0)n=count-1;
+            if(n>=count)n=0;
+            selected[id]=(unsigned)n;}
+    }
+}
 void menu_key(const key_event_t *e)
 {
+    if(e->source==KEY_WAKEUP){navigate(e->action==KEY_LONG?-1:1);return;}
     if(e->source==KEY_BACK){pages[current()].on_key(-1);return;}
     if(e->source==KEY_CONFIRM)pages[current()].on_key(e->action==KEY_LONG?2:1);
 }
 void menu_poll(void)
 {
-    uint32_t now=HAL_GetTick();int steps=ec11_poll();page_id id=current();
-    if(steps){
-        encoder_total+=steps;
-        if(id==THRESHOLDS && editing){unsigned s=selected[id];int gain=(int32_t)(accelerate_until-now)>0?APP_EDIT_ACCEL:1;
-            values[s]+=steps*gain;if(values[s]<0)values[s]=0;if(values[s]>maxima[s])values[s]=maxima[s];}
-        else {int count=id==ROOT?8:id==THRESHOLDS?4:id==MANUAL?9:1;int n=(int)selected[id]+steps;
-            if(n<0)n=0;
-            if(n>=count)n=count-1;
-            selected[id]=(unsigned)n;}
-    }
+    uint32_t now=HAL_GetTick();page_id id=current();
     if((int32_t)(now-deadline)>=0){deadline=now+APP_OLED_FRAME_MS;oled_clear();pages[id].render();if(!oled_flush(0))++frames;}
     if(now-last_report>=APP_STATUS_MS){
         const oled_stats_t *s=oled_stats();
-        LOGI("显示：帧率x10=%lu 耗时=%luus 编码器=%ld 丢失=%lu 连败=%lu 恢复=%lu",
-            (unsigned long)(frames*10000u/(now-last_report)),(unsigned long)s->last_us,(long)encoder_total,(unsigned long)ec11_overflows(),
+        LOGI("显示：帧率x10=%lu 耗时=%luus 连败=%lu 恢复=%lu",
+            (unsigned long)(frames*10000u/(now-last_report)),(unsigned long)s->last_us,
             (unsigned long)s->failures,(unsigned long)s->recoveries);
         frames=0;last_report=now;
-        LOGI("编码器诊断：AB=%u 中断=%lu 非法跳变=%lu",
-            (unsigned)ec11_levels(),(unsigned long)ec11_irq_count(),
-            (unsigned long)ec11_invalid_count());
     }
 }

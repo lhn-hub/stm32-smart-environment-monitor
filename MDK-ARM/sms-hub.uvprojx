@@ -657,16 +657,8 @@
           </Files>
         </Group>
         <Group>
-          <GroupName>::CMSIS</GroupName>
-        </Group>
-        <Group>
           <GroupName>M2</GroupName>
           <Files>
-            <File>
-              <FileName>ec11.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>../Drivers_Device/ec11/ec11.c</FilePath>
-            </File>
             <File>
               <FileName>ssd1306.c</FileName>
               <FileType>1</FileType>
@@ -683,6 +675,9 @@
               <FilePath>../Drivers_Device/oled_ui/oled_ui.c</FilePath>
             </File>
           </Files>
+        </Group>
+        <Group>
+          <GroupName>::CMSIS</GroupName>
         </Group>
       </Groups>
     </Target>

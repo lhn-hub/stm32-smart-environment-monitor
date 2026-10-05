@@ -106,13 +106,14 @@ void bsp_log(const char *level,const char *format,...){(void)level;(void)format;
 #include "../../Drivers_Device/oled_ui/oled_ui.c"
 #include "../../App/menu/menu.c"
 int main(void){
- unsigned i;key_event_t yes={KEY_CONFIRM,KEY_CLICK,0},back={KEY_BACK,KEY_CLICK,0},hold={KEY_CONFIRM,KEY_LONG,0};
- menu_init();assert(current()==HOME);menu_key(&yes);assert(current()==ROOT);
+ unsigned i;key_event_t next={KEY_WAKEUP,KEY_CLICK,0},prev={KEY_WAKEUP,KEY_LONG,0};key_event_t yes={KEY_CONFIRM,KEY_CLICK,0},back={KEY_BACK,KEY_CLICK,0},hold={KEY_CONFIRM,KEY_LONG,0};
+ menu_init();assert(current()==HOME);menu_key(&next);assert(current()==ROOT);
+ selected[ROOT]=7;menu_key(&next);assert(selected[ROOT]==0);menu_key(&prev);assert(selected[ROOT]==7);
  for(i=1;i<8;i++){selected[ROOT]=i;menu_key(&yes);assert(depth==2);menu_poll();menu_key(&back);assert(current()==ROOT && depth==1);}
  selected[ROOT]=2;menu_key(&yes);menu_key(&yes);assert(editing);
- pending=1;menu_poll();assert(values[0]==51);pending=-1;menu_poll();assert(values[0]==50);
- menu_key(&hold);pending=1;menu_poll();assert(values[0]==60);
- pending=1000;menu_poll();assert(values[0]==APP_EDIT_MAX_TEMP);
+ menu_key(&next);menu_poll();assert(values[0]==51);menu_key(&prev);menu_poll();assert(values[0]==50);
+ menu_key(&hold);menu_key(&next);menu_poll();assert(values[0]==60);
+ for(i=0;i<100;i++){menu_key(&next);}menu_poll();assert(values[0]==APP_EDIT_MAX_TEMP);
  menu_key(&back);selected[ROOT]=3;menu_key(&yes);menu_key(&yes);assert(beeps==1);
  selected[MANUAL]=1;menu_key(&yes);assert(colors==999);selected[MANUAL]=4;menu_key(&yes);assert(colors==0);
  for(i=0;i<PAGE_COUNT;i++){
