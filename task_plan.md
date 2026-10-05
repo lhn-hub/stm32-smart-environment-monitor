@@ -4,7 +4,7 @@
 按用户 M0、附件 A/B 完成 CubeMX/Keil 工程，真实编译与 DAP 验证后提交并标记 v0.1。
 
 ## Current Phase
-M2已按用户新方案取消EC11，改PA0切换/PB15确认/PC13返回；软件验证通过，待三键及OLED实物验收。
+M2三键菜单获用户“功能完整”确认，记录功能验收并发布v0.3；等待M3。
 
 ### Phase 1: 工具链与硬件约束核查
 **Status:** complete
@@ -22,10 +22,10 @@ M2已按用户新方案取消EC11，改PA0切换/PB15确认/PC13返回；软件�
 - 完成后提交 [M0] 工程:建立脚手架，打 tag v0.1。
 
 ## Next Step
-用户按Docs/M2-acceptance.md验证实板；通过后创建v0.3。
+等待用户发送M3任务，不提前实施后续阶段。
 
 ### Phase 5: M2 OLED、EC11与菜单
-**Status:** in_progress
+**Status:** complete
 - 静态1KB framebuffer、脏页刷新、ASCII/中文小字库。
 - 编码器边沿快照通知，任务上下文4态解码；菜单3级栈。
 - 编译/主机验证后交付上板20格、帧率、恢复测试；v0.3待验收。
