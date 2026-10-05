@@ -138,6 +138,26 @@ extern "C" {
 #define DHT11_PERIOD_MS            2100u
 #define DHT11_START_LOW_MS         20u
 #define DHT11_FAULT_LIMIT          10u
+#define DHT11_POWERUP_MS           1000u
+#define DHT11_START_MAX_MS         30u
+#define DHT11_CAPTURE_TIMEOUT_US   7000u
+#define DHT11_CAPTURE_WIDTHS       82u
+#define DHT11_EDGE_MAX_US          200u
+#define DHT11_RESPONSE_MIN_US      60u
+#define DHT11_RESPONSE_MAX_US      110u
+#define DHT11_BIT_LOW_MIN_US       35u
+#define DHT11_BIT_LOW_MAX_US       75u
+#define DHT11_ZERO_MIN_US          10u
+#define DHT11_ZERO_MAX_US          45u
+#define DHT11_ONE_MIN_US           55u
+#define DHT11_ONE_MAX_US           95u
+#define DHT11_TEMP_MIN_X10         (-200)
+#define DHT11_TEMP_MAX_X10         600
+#define DHT11_HUM_MAX_X10          1000
+#define ULTRA_PERIOD_MS            100u
+#define ULTRA_FAILURE_LIMIT        5u
+#define ULTRA_US_PER_CM            58u
+#define ULTRA_MIN_ECHO_US          116u
 
 /* EC11 A/B; SW unconnected. Confirm=PB15; Back=PC13. */
 #define EC11_A_PORT                GPIOA

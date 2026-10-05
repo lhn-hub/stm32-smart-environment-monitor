@@ -337,7 +337,7 @@
               <MiscControls>-Os -ffunction-sections -fdata-sections -std=c99</MiscControls>
               <Define>USE_HAL_DRIVER,STM32F103xB</Define>
               <Undefine />
-              <IncludePath>../Inc;../Drivers/STM32F1xx_HAL_Driver/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32F1xx/Include;../Drivers/CMSIS/Include;../BSP;../App;../App/menu;../App/tasks;../Drivers_Device/cs100a;../Drivers_Device/dht11;../Drivers_Device/ec11;../Drivers_Device/eventlog;../Drivers_Device/kvstore;../Drivers_Device/mq_gas;../Drivers_Device/oled_ssd1306;../Drivers_Device/oled_ui;../Drivers_Device/radar_at6010;../Drivers_Device/sg90;../Drivers_Device/tb6612_fan;../Drivers_Device/w25q64;../Middleware/esp8266;../Middleware/filter;../Middleware/json_mini;../Middleware/mqtt_client;../Middleware/FreeRTOS/include;../Middleware/FreeRTOS/portable/ARM_CM3;../Drivers_Device/oled_ui</IncludePath>
+              <IncludePath>../Inc;../Drivers/STM32F1xx_HAL_Driver/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32F1xx/Include;../Drivers/CMSIS/Include;../BSP;../App;../App/menu;../App/tasks;../Drivers_Device/cs100a;../Drivers_Device/dht11;../Drivers_Device/ec11;../Drivers_Device/eventlog;../Drivers_Device/kvstore;../Drivers_Device/mq_gas;../Drivers_Device/oled_ssd1306;../Drivers_Device/oled_ui;../Drivers_Device/radar_at6010;../Drivers_Device/sg90;../Drivers_Device/tb6612_fan;../Drivers_Device/w25q64;../Middleware/esp8266;../Middleware/filter;../Middleware/json_mini;../Middleware/mqtt_client;../Middleware/FreeRTOS/include;../Middleware/FreeRTOS/portable/ARM_CM3;../Drivers_Device/oled_ui;../Drivers_Device;../Drivers_Device/mcu_internal;../Drivers_Device/radar_rd03</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -678,6 +678,51 @@
         </Group>
         <Group>
           <GroupName>::CMSIS</GroupName>
+        </Group>
+        <Group>
+          <GroupName>M3</GroupName>
+          <Files>
+            <File>
+              <FileName>sensor.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Drivers_Device/sensor.c</FilePath>
+            </File>
+            <File>
+              <FileName>dht11.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Drivers_Device/dht11/dht11.c</FilePath>
+            </File>
+            <File>
+              <FileName>cs100a.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Drivers_Device/cs100a/cs100a.c</FilePath>
+            </File>
+            <File>
+              <FileName>mq_gas.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Drivers_Device/mq_gas/mq_gas.c</FilePath>
+            </File>
+            <File>
+              <FileName>radar_rd03.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Drivers_Device/radar_rd03/radar_rd03.c</FilePath>
+            </File>
+            <File>
+              <FileName>mcu_internal.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Drivers_Device/mcu_internal/mcu_internal.c</FilePath>
+            </File>
+            <File>
+              <FileName>sensor_filter.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Middleware/filter/sensor_filter.c</FilePath>
+            </File>
+            <File>
+              <FileName>datahub.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../App/datahub.c</FilePath>
+            </File>
+          </Files>
         </Group>
       </Groups>
     </Target>

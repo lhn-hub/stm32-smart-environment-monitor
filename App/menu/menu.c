@@ -2,6 +2,7 @@
 #include "ssd1306.h"
 #include "oled_ui.h"
 #include "app_config.h"
+#include "datahub.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include <stdio.h>
@@ -14,6 +15,7 @@ static int values[4]={DEF_TEMP_ALARM_C_X10/10,DEF_INTRUSION_DIST_CM,DEF_SMOKE_CO
 static const int maxima[4]={APP_EDIT_MAX_TEMP,APP_EDIT_MAX_DISTANCE,APP_EDIT_MAX_CONFIRM_MS,APP_EDIT_MAX_CONFIRM_MS};
 static uint32_t deadline,last_report,frames,accelerate_until;
 static char text[48];
+static datahub_snapshot_t sensors;
 static void no_op(void) {}
 static page_id current(void) { return stack[depth]; }
 static const page_t pages[PAGE_COUNT];
@@ -37,8 +39,21 @@ static void render_home(void)
 {
     uint32_t seconds=rtc_get();
     header(armed?"ARMED":"DISARM"); status();
-    oled_text(0,16,"T:--.-C H:--%",0);oled_text(0,24,"Smoke:-- Air:--",0);
-    oled_text(0,32,"Dist:---cm Human:--",0);
+    if(!datahub_snapshot(&sensors)) {
+        const sensor_value_t *t=&sensors.sensors[SENSOR_DHT11];
+        const sensor_value_t *u=&sensors.sensors[SENSOR_DISTANCE];
+        const sensor_value_t *r=&sensors.sensors[SENSOR_RADAR];
+        if(t->quality!=SENSOR_FAULT)snprintf(text,sizeof(text),"T:%s%ld.%ld H:%ld.%ld%%",t->value<0?"-":"",(long)(t->value<0?-(t->value/10):t->value/10),(long)(t->value<0?-(t->value%10):t->value%10),(long)(t->auxiliary/10),(long)(t->auxiliary%10));
+        else snprintf(text,sizeof(text),"T:FAULT H:FAULT");
+        oled_text(0,16,text,0);
+        snprintf(text,sizeof(text),"MQ2:%s MQ135:%s",sensors.sensors[SENSOR_SMOKE].flags&SENSOR_DISABLED?"OFF":sensors.sensors[SENSOR_SMOKE].quality!=SENSOR_GOOD?"?":sensors.sensors[SENSOR_SMOKE].value?"ALM":"OK",
+            sensors.sensors[SENSOR_AIR].flags&SENSOR_DISABLED?"OFF":sensors.sensors[SENSOR_AIR].quality!=SENSOR_GOOD?"?":sensors.sensors[SENSOR_AIR].value?"ALM":"OK");
+        oled_text(0,24,text,0);
+        if(u->quality!=SENSOR_FAULT)snprintf(text,sizeof(text),"D:%ldcm%c Human:%s",(long)u->value,u->quality==SENSOR_STALE?'*':' ',r->quality==SENSOR_GOOD?(r->value?"YES":"NO"):"?");
+        else snprintf(text,sizeof(text),"D:FAULT Human:%s",r->quality==SENSOR_GOOD?(r->value?"YES":"NO"):"?");
+        oled_text(0,32,text,0);
+        if(t->quality==SENSOR_STALE)oled_text(0,48,"T/H: STALE",0);
+    } else oled_text(0,16,"Sensors: unavailable",0);
     snprintf(text,sizeof(text),"UTC %02lu:%02lu:%02lu",(unsigned long)(seconds/3600u%24u),(unsigned long)(seconds/60u%60u),(unsigned long)(seconds%60u));
     oled_text(0,40,text,0);oled_text(0,56,"KEY1:NEXT PB15:OK",0);
 }
@@ -110,7 +125,8 @@ static void navigate(int steps)
     if(id==HOME){push(ROOT);return;}
     if(steps){
         if(id==THRESHOLDS && editing){unsigned s=selected[id];int gain=(int32_t)(accelerate_until-now)>0?APP_EDIT_ACCEL:1;
-            values[s]+=steps*gain;if(values[s]<0)values[s]=0;if(values[s]>maxima[s])values[s]=maxima[s];}
+            values[s]+=steps*gain;if(values[s]<0)values[s]=0;if(values[s]>maxima[s])values[s]=maxima[s];
+            if(s>=2 && datahub_set_gas_limits((uint32_t)values[2],(uint32_t)values[3]))LOGW("阈值暂未同步");}
         else {int count=id==ROOT?8:id==THRESHOLDS?4:id==MANUAL?9:1;int n=(int)selected[id]+steps;
             if(n<0)n=count-1;
             if(n>=count)n=0;

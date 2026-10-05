@@ -7,7 +7,7 @@ out=root/'tmp/m2';out.mkdir(exist_ok=True)
 def compile_run(name,source):
     (out/(name+'.c')).write_text(source,encoding='utf-8')
     subprocess.run(['D:/msys64/ucrt64/bin/gcc.exe','-std=c99','-Wall','-Wextra','-Werror',
-      '-I','BSP','-I','App','-I','Inc','-I','Drivers_Device/ec11','-I','Drivers_Device/oled_ssd1306','-I','App/menu',
+      '-I','Drivers_Device','-I','BSP','-I','App','-I','Inc','-I','Drivers_Device/ec11','-I','Drivers_Device/oled_ssd1306','-I','App/menu',
       '-I','Drivers_Device/oled_ui','-I','tmp/m2','tmp/m2/'+name+'.c','-o','tmp/m2/'+name+'.exe'],cwd=root,env=env,check=True)
     subprocess.run([str(out/(name+'.exe'))],cwd=root,env=env,check=True)
 ec=(root/'Drivers_Device/ec11/ec11.c').read_text(encoding='utf-8')
@@ -89,6 +89,9 @@ int main(void){
 (out/'task.h').write_text('static unsigned uxTaskGetStackHighWaterMark(void *p){(void)p;return 200;}\n')
 compile_run('menu',prefix+r'''
 #include "bsp_services.h"
+#include "datahub.h"
+int datahub_snapshot(datahub_snapshot_t *p){memset(p,0,sizeof(*p));p->sensors[SENSOR_DHT11].value=260;p->sensors[SENSOR_DHT11].auxiliary=550;p->sensors[SENSOR_SMOKE].flags=p->sensors[SENSOR_AIR].flags=SENSOR_DISABLED;return 0;}
+int datahub_set_gas_limits(uint32_t s,uint32_t a){(void)s;(void)a;return 0;}
 static int pending,beeps;
 static unsigned colors;
 void ec11_start(void){}

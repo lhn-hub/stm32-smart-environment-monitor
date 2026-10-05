@@ -5,6 +5,8 @@
 #include "event_groups.h"
 #include <stdio.h>
 #include "menu.h"
+#include "sensor.h"
+#include "datahub.h"
 int bsp_adc_start(void);
 int bsp_rtc_start(void);
 int bsp_net_start(void);
@@ -40,6 +42,7 @@ static void worker(void *argument)
                 if(bsp_adc_start()) bsp_panic("ADC初始化失败");
                 if(bsp_rtc_start()) LOGE("RTC初始化失败");
                 i2c_scan();
+                sensors_init();
             }
             if(id==4 && bsp_controls_init()) bsp_panic("控制服务初始化失败");
             started=1;
@@ -59,7 +62,10 @@ static void worker(void *argument)
                 wd=1;
             }
             if(wd) {
-                for(i=0;i<APP_TASK_COUNT;i++) if(now-stamps[i]>APP_HEARTBEAT_MS) healthy=0;
+                /* Sample AFTER initialization/heartbeat writes; stale loop 'now'
+                 * can precede a stamp and underflow into a false watchdog fault. */
+                uint32_t checked=HAL_GetTick();
+                for(i=0;i<APP_TASK_COUNT;i++) if(checked-stamps[i]>APP_HEARTBEAT_MS) healthy=0;
                 if(!healthy) { watchdog_tripped=1; bsp_emergency_stop(); }
                 if(!watchdog_tripped && (xEventGroupGetBits(heartbeats)&all)==all) {
                     xEventGroupClearBits(heartbeats,all); bsp_watchdog_feed();
@@ -82,22 +88,23 @@ static void worker(void *argument)
                 if(ui_started) menu_key(&e);
             }
         }
+        if(id==3)sensors_poll();
         if(id==4 && ui_started) menu_poll();
         if(now-last_status>=APP_STATUS_MS) {
             unsigned free=(unsigned)uxTaskGetStackHighWaterMark(NULL);
             last_status=now;
             LOGI("运行正常 栈剩余=%u/%u字 (%u%%)",free,stacks[id],free*100u/stacks[id]);
-            if(id==3) LOGI("芯片温度=不可用 校准=禁用 VDDA=%lumV(标称估算) RTC=%lu",
-                (unsigned long)vdda_mv_get(),(unsigned long)rtc_get());
+            if(id==3)sensors_log_table();
             if(id==0) LOGI("堆剩余=%u字节 看门狗故障=%lu",(unsigned)xPortGetFreeHeapSize(),(unsigned long)watchdog_tripped);
         }
-        vTaskDelay(pdMS_TO_TICKS(id==2?APP_NET_POLL_MS:id==4?APP_MENU_PERIOD_MS:APP_MONITOR_PERIOD_MS));
+        vTaskDelay(pdMS_TO_TICKS(id==2?APP_NET_POLL_MS:id==4?APP_MENU_PERIOD_MS:id==3?APP_SENSOR_POLL_MS:APP_MONITOR_PERIOD_MS));
     }
 }
 void app_start(void)
 {
     unsigned i;
     if(bsp_services_init()) bsp_panic("板级服务初始化失败");
+    if(datahub_init())bsp_panic("DataHub初始化失败");
     heartbeats=xEventGroupCreate();
     if(!heartbeats) bsp_panic("心跳内存分配失败");
     for(i=0;i<APP_TASK_COUNT;i++)

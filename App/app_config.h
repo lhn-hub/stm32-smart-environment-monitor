@@ -1,7 +1,7 @@
 #ifndef APP_CONFIG_H
 #define APP_CONFIG_H
 #include "bsp_pin.h"
-#define APP_FW_VERSION "0.3.0-dev"
+#define APP_FW_VERSION "0.4.0-dev"
 #define APP_WIFI_SSID ""
 #define APP_WIFI_PASSWORD ""
 #define APP_MQTT_HOST "broker.emqx.io"
@@ -101,4 +101,15 @@
 #define APP_WATCHDOG_TEST_NONE 0xffffffffu
 #define APP_NET_TX_TIMEOUT_MS 100u
 #define APP_ADC_PUBLISH_MS 10u
+#define APP_SENSOR_POLL_MS 50u
+#define APP_SENSOR_TABLE_MS 5000u
+#define APP_SENSOR_REGULAR_MS 200u
+#define APP_SENSOR_STALE_MULTIPLIER 3u
+#define APP_DATAHUB_LOCK_MS 5u
+#define APP_FILTER_WINDOW 5u
+/* Enable only AFTER board-level5V->3.3V solution. Software does not protect PB0. */
+#define APP_MQ_DO_ENABLED 0
+#define APP_SENSOR_UNKNOWN (-1)
+#define APP_RADAR_SETTLE_MS 1000u
+#define APP_MCU_STALE_MS 1000u
 #endif

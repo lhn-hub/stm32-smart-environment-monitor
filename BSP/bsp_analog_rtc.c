@@ -5,6 +5,7 @@
 #include "task.h"
 static uint16_t samples[APP_ADC_DMA_SAMPLES];
 static volatile uint32_t vdda;
+static volatile uint32_t adc_sampled_at;
 static volatile uint32_t temperature_raw;
 static IWDG_HandleTypeDef watchdog;
 
@@ -22,6 +23,7 @@ static void average(unsigned start)
      * VDDA[mV] = 1200 * 4095 / ADC_VREFINT. Zero/out-of-range is invalid.
      */
     vdda=(reference && reference<=ADC_FULL_SCALE) ? VREFINT_TYP_MV*ADC_FULL_SCALE/reference:0;
+    adc_sampled_at=HAL_GetTick();
 }
 void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef *adc)
 { if(adc->Instance==ADC1) average(0); }
@@ -30,6 +32,8 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *adc)
 void HAL_ADC_ErrorCallback(ADC_HandleTypeDef *adc)
 { if(adc->Instance==ADC1) vdda=0; }
 uint32_t vdda_mv_get(void) { return vdda; }
+void bsp_adc_snapshot(uint32_t *mv,uint32_t *stamp)
+{ taskENTER_CRITICAL();*mv=vdda;*stamp=adc_sampled_at;taskEXIT_CRITICAL(); }
 int mcu_temp_get(int32_t *value)
 {
     if(value) *value=APP_TEMP_FAULT_VALUE;

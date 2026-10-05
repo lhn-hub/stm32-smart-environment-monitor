@@ -4,7 +4,7 @@
 按用户 M0、附件 A/B 完成 CubeMX/Keil 工程，真实编译与 DAP 验证后提交并标记 v0.1。
 
 ## Current Phase
-M3用户取消标定表回填，采用厂家资料与GitHub交叉核对的默认配置；Rd-03型号已确认，MQ电气接入未解决。
+M3软件驱动、sensor_ops/DataHub、菜单联动及主机回归已完成；编译0错误0警告。MQ正式禁用，物理精度/时序与开路诊断限制仍未验收。
 
 ### Phase 1: 工具链与硬件约束核查
 **Status:** complete
@@ -22,13 +22,14 @@ M3用户取消标定表回填，采用厂家资料与GitHub交叉核对的默认
 - 完成后提交 [M0] 工程:建立脚手架，打 tag v0.1。
 
 ## Next Step
-按Docs/M3-defaults.md继续M3驱动与sensor_ops/DataHub；不再索要标定表，MQ未安全接入时不得标为正常。
+用户烧录M3检查DHT/距离/雷达和统一日志；MQ保持断开。安全电平问题及实物验收通过后再创建v0.4。
 
 ### Phase 6: M3传感器与DataHub
 **Status:** in_progress
-- 前置标定作业单已保存；未实现传感器驱动。
-- 保留TIM4完整微秒时间戳，实施时按M3更新30ms超时。
-- DHT11全帧与<2ms关中断冲突、单DO断线不可观测限制需明确。
+- 软件实现完成：六实例、DataHub互斥、5样本滤波、故障质量、阈值菜单同步及实时主页。
+- DHT采用EXTI12脉宽捕获；超声PA15/30ms超时；共享ISR先超声再DHT再按键。
+- 主机协议/超时/回绕/质量/恢复/MQ门控/菜单回归通过。未模拟为真实50次采样成功率或±1cm实测。
+- MQ DO硬件冲突和单DO开路不可观测限制保留；正式固件禁用两路MQ并标FAULT。
 
 ### Phase 5: M2 OLED、EC11与菜单
 **Status:** complete
