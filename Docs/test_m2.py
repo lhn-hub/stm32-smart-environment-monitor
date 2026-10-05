@@ -19,6 +19,7 @@ compile_run('encoder',r'''
 #define APP_EC11_EDGES_PER_DETENT 4
 static uint8_t previous;
 static int phase;
+static uint32_t invalid;
 '''+part+r'''
 int main(void){
  unsigned n,i;int sum=0;const uint8_t cw[]={1,0,2,3},ccw[]={2,0,1,3};
@@ -93,6 +94,9 @@ static unsigned colors;
 void ec11_start(void){}
 int ec11_poll(void){int n=pending;pending=0;return n;}
 uint32_t ec11_overflows(void){return 0;}
+uint8_t ec11_levels(void){return 3;}
+uint32_t ec11_irq_count(void){return 0;}
+uint32_t ec11_invalid_count(void){return 0;}
 uint32_t rtc_get(void){return 3661;}
 uint32_t vdda_mv_get(void){return 3300;}
 int beep_ms(uint16_t ms){(void)ms;beeps++;return 0;}

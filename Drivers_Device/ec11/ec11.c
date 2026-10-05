@@ -6,6 +6,8 @@ static uint8_t previous;
 static int phase;
 static volatile uint8_t ring[APP_EC11_RING_SIZE];
 static volatile uint32_t head,tail,lost;
+static volatile uint32_t interrupts;
+static uint32_t invalid;
 static uint32_t seen_lost;
 static TaskHandle_t owner;
 void ec11_reset(uint8_t ab) { previous=ab&3u; phase=0; }
@@ -15,7 +17,7 @@ int ec11_feed(uint8_t ab)
     uint8_t changed=previous^(ab&3u);
     int d=step[(previous<<2)|(ab&3u)];
     previous=ab&3u;
-    if(changed==3u) { phase=0; return 0; }
+    if(changed==3u) { ++invalid; phase=0; return 0; }
     phase+=d;
     if(phase>=APP_EC11_EDGES_PER_DETENT) { phase=0; return 1; }
     if(phase<=-APP_EC11_EDGES_PER_DETENT) { phase=0; return -1; }
@@ -33,6 +35,7 @@ void ec11_start(void)
 }
 void ec11_irq(void)
 {
+    ++interrupts;
     BaseType_t wake=pdFALSE;
     uint32_t next=(head+1u)%APP_EC11_RING_SIZE;
     if(!owner) return;
@@ -58,3 +61,6 @@ int ec11_poll(void)
     return total;
 }
 uint32_t ec11_overflows(void) { return lost; }
+uint8_t ec11_levels(void) { return sample(); }
+uint32_t ec11_irq_count(void) { return interrupts; }
+uint32_t ec11_invalid_count(void) { return invalid; }

@@ -12,4 +12,8 @@ void ec11_start(void);
 /** @brief Drain ordered ISR snapshots in MenuTask; return net detents. */
 int ec11_poll(void);
 uint32_t ec11_overflows(void);
+/** @brief Task-context diagnostics: pin levels, captured IRQs, invalid jumps. */
+uint8_t ec11_levels(void);
+uint32_t ec11_irq_count(void);
+uint32_t ec11_invalid_count(void);
 #endif

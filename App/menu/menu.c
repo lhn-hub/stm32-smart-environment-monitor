@@ -130,5 +130,8 @@ void menu_poll(void)
             (unsigned long)(frames*10000u/(now-last_report)),(unsigned long)s->last_us,(long)encoder_total,(unsigned long)ec11_overflows(),
             (unsigned long)s->failures,(unsigned long)s->recoveries);
         frames=0;last_report=now;
+        LOGI("编码器诊断：AB=%u 中断=%lu 非法跳变=%lu",
+            (unsigned)ec11_levels(),(unsigned long)ec11_irq_count(),
+            (unsigned long)ec11_invalid_count());
     }
 }
