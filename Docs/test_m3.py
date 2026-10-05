@@ -214,7 +214,11 @@ int mq_ioctl(sensor_id_t id,unsigned cmd,void *p){(void)id;(void)cmd;(void)p;ret
 #include "../../Drivers_Device/sensor.c"
 int main(void){
  sensor_value_t v;datahub_snapshot_t snap;sensor_diag_t d;unsigned i;size_t count;uint32_t original;
- now_us=0;assert(!datahub_init());sensors_init();now_ms=5000;sensors_poll();
+ now_us=0;now_ms=0;assert(!datahub_init());sensors_init();sensors_poll();
+ assert(!sensor_ioctl(SENSOR_DHT11,SENSOR_IOCTL_DIAG,&d));assert(d.attempts==0);
+ now_ms=DHT11_POWERUP_MS-1;sensors_poll();sensor_ioctl(SENSOR_DHT11,SENSOR_IOCTL_DIAG,&d);assert(d.attempts==0);
+ now_ms=DHT11_POWERUP_MS;sensors_poll();sensor_ioctl(SENSOR_DHT11,SENSOR_IOCTL_DIAG,&d);assert(d.attempts==1&&d.successes==1);
+ now_ms=5000;sensors_poll();
  assert(sensor_registry(&count)&&count==SENSOR_COUNT);
  for(i=0;i<SENSOR_COUNT;i++){assert(!sensor_read((sensor_id_t)i,&v));assert(v.value==42&&v.quality==SENSOR_GOOD);}
  original=v.timestamp;fail=1;

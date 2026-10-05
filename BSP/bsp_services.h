@@ -13,6 +13,13 @@ int bsp_is_faulted(void);
 void bsp_panic(const char *reason);
 /** @brief Task-only serialized printf log. No floating point formats. */
 void bsp_log(const char *level, const char *format, ...);
+/** @brief Task-only bounded logging exclusion for one short polling transfer.
+ * @return 0 with existing priority-inheritance console mutex held, -1 otherwise.
+ * @note No interrupt masking or scheduler suspension. Never log while held;
+ * call end on every exit. This is not an I2C bus ownership lock.
+ */
+int bsp_log_quiet_begin(uint32_t timeout_ms);
+void bsp_log_quiet_end(void);
 #define LOGI(...) bsp_log("信息", __VA_ARGS__)
 #define LOGW(...) bsp_log("警告", __VA_ARGS__)
 #define LOGE(...) bsp_log("错误", __VA_ARGS__)

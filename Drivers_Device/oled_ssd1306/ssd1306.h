@@ -6,9 +6,12 @@ typedef struct {
     uint32_t last_hal_status, last_hal_error, last_failed_us;
     uint8_t online;
 } oled_stats_t;
+enum { OLED_DEFERRED=-2 };
 /** @brief Init/retry display in MenuTask. No framebuffer allocation. */
 int oled_init(void);
-/** @brief Flush changed pages, or force all pages; bounded I2C transfers. */
+/** @brief Flush changed pages; return0 success,-1 device failure,-2 log lock busy.
+ * @note Deferred pages remain dirty and are retried next frame without bus recovery.
+ */
 int oled_flush(int full);
 /** @brief Clear local pixels; does not transmit a visible blank frame. */
 void oled_clear(void);

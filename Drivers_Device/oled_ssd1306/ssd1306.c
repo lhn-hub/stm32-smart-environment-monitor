@@ -12,13 +12,20 @@ static oled_stats_t stats;
 static uint32_t retry_at;
 static int transfer(uint16_t control,const uint8_t *data,uint16_t n)
 {
-    uint32_t start=bsp_micros();
-    uint32_t result=(uint32_t)HAL_I2C_Mem_Write(&hi2c1,OLED_ADDR,control,I2C_MEMADD_SIZE_8BIT,
+    uint32_t start,result;
+    /* Long polling printf at higher priority can spend this entire8ms HAL
+     * budget while I2C waits for its next byte. Reuse console mutex per chunk:
+     * pending log tasks lend priority, interrupts remain enabled throughout. */
+    if(bsp_log_quiet_begin(APP_LOG_LOCK_MS))return OLED_DEFERRED;
+    start=bsp_micros();
+    result=(uint32_t)HAL_I2C_Mem_Write(&hi2c1,OLED_ADDR,control,I2C_MEMADD_SIZE_8BIT,
         (uint8_t*)data,n,APP_OLED_TIMEOUT_MS);
     if(result!=(uint32_t)HAL_OK){
         stats.last_hal_status=result;stats.last_hal_error=hi2c1.ErrorCode;
-        stats.last_failed_us=bsp_micros()-start;return -1;
+        stats.last_failed_us=bsp_micros()-start;
+        bsp_log_quiet_end();return -1;
     }
+    bsp_log_quiet_end();
     return 0;
 }
 static int command(const uint8_t *data,uint16_t n){return transfer(0,data,n);}
@@ -30,28 +37,33 @@ static int failed(void)
 }
 int oled_init(void)
 {
+    int result;
     /* SSD1306 controller commands, not GPIO/period/threshold configuration. */
     static const uint8_t sequence[]={0xae,0xd5,0x80,0xa8,0x3f,0xd3,0,0x40,0x8d,0x14,
         0x20,0x02,0xa1,0xc8,0xda,0x12,0x81,0x7f,0xd9,0xf1,0xdb,0x40,0xa4,0xa6,0xaf};
-    if(command(sequence,sizeof(sequence))) return failed();
+    result=command(sequence,sizeof(sequence));
+    if(result)return result==OLED_DEFERRED?result:failed();
     stats.online=1; dirty=0xff; return 0;
 }
 int oled_flush(int full)
 {
-    uint32_t begin=bsp_micros(); unsigned p,x;
+    uint32_t begin=bsp_micros(); unsigned p,x;int result;
     if(!stats.online) {
         if((int32_t)(HAL_GetTick()-retry_at)<0) return -1;
         ++stats.recoveries;
         if(bsp_i2c_recover()) return failed();
-        if(oled_init()) return -1;
+        result=oled_init();if(result)return result;
         full=1;
     }
     if(full) dirty=0xff;
     for(p=0;p<APP_OLED_PAGES;p++) if(dirty&(1u<<p)) {
         uint8_t cmd[]={ (uint8_t)(0xb0u+p),0x00,0x10 };
-        if(command(cmd,sizeof(cmd))) return failed();
-        for(x=0;x<APP_OLED_WIDTH;x+=APP_OLED_CHUNK)
-            if(transfer(0x40,&pixels[p*APP_OLED_WIDTH+x],APP_OLED_CHUNK)) return failed();
+        result=command(cmd,sizeof(cmd));
+        if(result)return result==OLED_DEFERRED?result:failed();
+        for(x=0;x<APP_OLED_WIDTH;x+=APP_OLED_CHUNK){
+            result=transfer(0x40,&pixels[p*APP_OLED_WIDTH+x],APP_OLED_CHUNK);
+            if(result)return result==OLED_DEFERRED?result:failed();
+        }
         dirty&=(uint8_t)~(1u<<p);
     }
     stats.failures=0; ++stats.frames;

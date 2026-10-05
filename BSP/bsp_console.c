@@ -28,6 +28,14 @@ int bsp_console_init(void)
     return log_lock ? 0 : -1;
 }
 
+int bsp_log_quiet_begin(uint32_t timeout_ms)
+{
+    if(!log_lock || __get_IPSR() || __get_PRIMASK() || __get_BASEPRI() ||
+       xTaskGetSchedulerState()!=taskSCHEDULER_RUNNING)return -1;
+    return xSemaphoreTake(log_lock,pdMS_TO_TICKS(timeout_ms))==pdTRUE?0:-1;
+}
+void bsp_log_quiet_end(void){xSemaphoreGive(log_lock);}
+
 static const char *display_task(void)
 {
     const char *name=pcTaskGetName(NULL);

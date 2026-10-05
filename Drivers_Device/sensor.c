@@ -33,6 +33,8 @@ void sensors_init(void)
         cached[i].quality=cached[i].auxiliary_quality=SENSOR_FAULT;
         if(registry[i].init((sensor_id_t)i))++diag[i].failures;
         due[i]=HAL_GetTick();
+        /* Power-up stabilization is not a failed communication attempt. */
+        if(i==SENSOR_DHT11 && due[i]<DHT11_POWERUP_MS)due[i]=DHT11_POWERUP_MS;
     }
     LOGW("传感器：MQ电平未处理，默认禁用；DO通道无开路自检；MCU温度校准禁用");
 }

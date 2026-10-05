@@ -54,36 +54,46 @@ prefix=r'''
 #define I2C_MEMADD_SIZE_8BIT 1
 #define HAL_OK 0
 static struct {uint32_t ErrorCode;} hi2c1;
-static int missing;
+static int missing,quiet,deny_quiet,inject_log;
 static uint32_t now,us;
 static unsigned writes,recoveries;
 uint32_t HAL_GetTick(void){return now;}
 uint32_t bsp_micros(void){return us;}
 int bsp_i2c_recover(void){recoveries++;return 0;}
+int bsp_log_quiet_begin(uint32_t timeout_ms){(void)timeout_ms;if(deny_quiet)return -1;assert(!quiet);quiet=1;return 0;}
+void bsp_log_quiet_end(void){assert(quiet);quiet=0;}
 static int HAL_I2C_Mem_Write(void *h,unsigned addr,unsigned control,unsigned mode,
  uint8_t *data,unsigned n,unsigned timeout){
  (void)h;(void)mode;(void)data;(void)timeout;assert(addr==0x78u);assert(control==0||control==0x40);
- writes++;us+=(n+2)*23;hi2c1.ErrorCode=missing?4u:0u;return missing?1:0;
+ writes++;us+=(n+2)*23;
+ /* Model a synchronous30ms higher-priority log burst during the8ms HAL budget. */
+ if(inject_log && !quiet){us+=30000;hi2c1.ErrorCode=0x20;return 1;}
+ hi2c1.ErrorCode=missing?4u:0u;return missing?1:0;
 }
 #include "../../Drivers_Device/oled_ssd1306/ssd1306.c"
 '''
 compile_run('display',prefix+r'''
 int main(void){
  unsigned n;
- assert(oled_init()==0);assert(oled_flush(1)==0);n=writes;
+ inject_log=1;assert(oled_init()==0);assert(!quiet);
+ assert(oled_flush(1)==0);assert(!quiet);n=writes;
  assert(oled_flush(0)==0 && writes==n);
  oled_pixel(2,2,1);assert(oled_flush(0)==0 && writes==n+5);
  oled_pixel(-1,-1,1);oled_pixel(128,64,1);n=writes;assert(oled_flush(0)==0 && writes==n);
  missing=1;oled_pixel(0,0,1);assert(oled_flush(0)==-1 && !stats.online);
  assert(oled_stats()->last_hal_status==1 && oled_stats()->last_hal_error==4 && oled_stats()->last_failed_us>0);
- n=writes;assert(oled_flush(0)==-1 && writes==n);
+ n=writes;assert(oled_flush(0)==-1 && writes==n);assert(!quiet);
  missing=0;now+=APP_OLED_RETRY_MS;assert(oled_flush(0)==0);
  assert(stats.online && stats.failures==0 && recoveries==1 && stats.recoveries==1);
  assert(oled_stats()->last_hal_error==4); /* retain failure after successful recovery */
+ deny_quiet=1;oled_pixel(4,4,1);n=writes;
+ assert(oled_flush(0)==-2 && writes==n && stats.online && stats.failures==0 && !quiet);
+ deny_quiet=0;assert(oled_flush(0)==0 && writes>n && !quiet);
  oled_clear();oled_text(0,0,"sms-hub 6x8",0);oled_text(0,12,"8x16",1);
  for(n=0;n<7;n++)oled_hanzi(n*16,36,n);
  {FILE *f=fopen("tmp/m2/fonts.pbm","wb");unsigned x,y;assert(f);fprintf(f,"P1\n128 64\n");
  for(y=0;y<64;y++){for(x=0;x<128;x++)fprintf(f,"%u ",(pixels[y/8*128+x]>>(y&7))&1);fputc('\n',f);}fclose(f);}
+ puts("PASS OLED console contention: deferred frame retains online/dirty state; lock released on success and failure");
  puts("PASS OLED actual driver: 1KB buffer, dirty page/no-op refresh, clipping, unplug/retry/recover/reset consecutive failures");return 0;
 }
 ''')
@@ -137,3 +147,34 @@ for i,p in enumerate(paths):
     im=Image.open(p).convert('L');im=ImageOps.invert(im).resize((512,256),Image.Resampling.NEAREST)
     sheet.paste(im,(0,i*280+18));draw.text((0,i*280),p.stem,fill='white')
 sheet.save(out/'preview.png')
+
+console=(root/'BSP/bsp_console.c').read_text(encoding='utf-8')
+quiet_code=console[console.index('int bsp_log_quiet_begin'):console.index('static const char *display_task')]
+compile_run('log_quiet',r'''
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#define taskSCHEDULER_RUNNING 2
+#define pdTRUE 1
+#define pdMS_TO_TICKS(x) (x)
+static void *log_lock;
+static unsigned ipsr,primask,basepri,takes,gives,waited;
+static int scheduler,available=1;
+unsigned __get_IPSR(void){return ipsr;}
+unsigned __get_PRIMASK(void){return primask;}
+unsigned __get_BASEPRI(void){return basepri;}
+int xTaskGetSchedulerState(void){return scheduler;}
+int xSemaphoreTake(void *lock,unsigned wait){assert(lock==log_lock);takes++;waited=wait;return available;}
+int xSemaphoreGive(void *lock){assert(lock==log_lock);gives++;return 1;}
+'''+quiet_code+r'''
+int main(void){
+ assert(bsp_log_quiet_begin(50)==-1);log_lock=(void*)1;
+ assert(bsp_log_quiet_begin(50)==-1);scheduler=taskSCHEDULER_RUNNING;
+ ipsr=1;assert(bsp_log_quiet_begin(50)==-1);ipsr=0;
+ primask=1;assert(bsp_log_quiet_begin(50)==-1);primask=0;
+ basepri=80;assert(bsp_log_quiet_begin(50)==-1);basepri=0;assert(takes==0);
+ available=0;assert(bsp_log_quiet_begin(50)==-1);assert(takes==1&&waited==50);
+ available=1;assert(bsp_log_quiet_begin(50)==0);bsp_log_quiet_end();assert(gives==1);
+ puts("PASS actual console exclusion: existing mutex, bounded wait, IRQ/critical/startup rejection, release");return 0;
+}
+''')
