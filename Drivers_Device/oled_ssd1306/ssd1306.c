@@ -10,8 +10,18 @@ static uint8_t pixels[APP_OLED_WIDTH*APP_OLED_PAGES];
 static uint8_t dirty;
 static oled_stats_t stats;
 static uint32_t retry_at;
-static int command(const uint8_t *data,uint16_t n)
-{ return HAL_I2C_Mem_Write(&hi2c1,OLED_ADDR,0,I2C_MEMADD_SIZE_8BIT,(uint8_t*)data,n,APP_OLED_TIMEOUT_MS)==HAL_OK?0:-1; }
+static int transfer(uint16_t control,const uint8_t *data,uint16_t n)
+{
+    uint32_t start=bsp_micros();
+    uint32_t result=(uint32_t)HAL_I2C_Mem_Write(&hi2c1,OLED_ADDR,control,I2C_MEMADD_SIZE_8BIT,
+        (uint8_t*)data,n,APP_OLED_TIMEOUT_MS);
+    if(result!=(uint32_t)HAL_OK){
+        stats.last_hal_status=result;stats.last_hal_error=hi2c1.ErrorCode;
+        stats.last_failed_us=bsp_micros()-start;return -1;
+    }
+    return 0;
+}
+static int command(const uint8_t *data,uint16_t n){return transfer(0,data,n);}
 static int failed(void)
 {
     ++stats.failures; stats.online=0;
@@ -41,8 +51,7 @@ int oled_flush(int full)
         uint8_t cmd[]={ (uint8_t)(0xb0u+p),0x00,0x10 };
         if(command(cmd,sizeof(cmd))) return failed();
         for(x=0;x<APP_OLED_WIDTH;x+=APP_OLED_CHUNK)
-            if(HAL_I2C_Mem_Write(&hi2c1,OLED_ADDR,0x40,I2C_MEMADD_SIZE_8BIT,
-                &pixels[p*APP_OLED_WIDTH+x],APP_OLED_CHUNK,APP_OLED_TIMEOUT_MS)!=HAL_OK) return failed();
+            if(transfer(0x40,&pixels[p*APP_OLED_WIDTH+x],APP_OLED_CHUNK)) return failed();
         dirty&=(uint8_t)~(1u<<p);
     }
     stats.failures=0; ++stats.frames;

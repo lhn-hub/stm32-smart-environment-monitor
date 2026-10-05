@@ -72,15 +72,16 @@ run('pulse_drivers',r'''
 #include "dht11.h"
 #include "cs100a.h"
 static uint16_t fixture[DHT11_CAPTURE_WIDTHS];
-static unsigned simulate_dht,simulate_echo;
+static unsigned simulate_dht,simulate_echo,stretch_start,echo_stuck,trigger_fail;
 void HAL_GPIO_Init(GPIO_TypeDef *p,GPIO_InitTypeDef *g){(void)p;if(g->Mode==GPIO_MODE_IT_RISING_FALLING)EXTI->IMR|=g->Pin;}
 void vTaskDelay(unsigned ticks);
-int bsp_delay_us(uint32_t us){now_us+=us;return 0;}
+int bsp_delay_us(uint32_t us){now_us+=us;return trigger_fail?-1:0;}
 #include "../../Middleware/filter/sensor_filter.c"
 #include "../../Drivers_Device/dht11/dht11.c"
 #include "../../Drivers_Device/cs100a/cs100a.c"
 void vTaskDelay(unsigned ticks){
  unsigned i;
+ if(stretch_start && ticks>1u)ticks+=20u;
  now_us+=ticks*1000u;now_ms+=ticks;
  if(active && simulate_dht){
   gpio_b.IDR&=~DHT11_PIN;dht11_edge_irq();
@@ -88,7 +89,7 @@ void vTaskDelay(unsigned ticks){
  }
  if(phase==1 && simulate_echo){
   gpio_a.IDR|=ULTRA_ECHO_PIN;cs100a_edge_irq();now_us+=simulate_echo;
-  gpio_a.IDR&=~ULTRA_ECHO_PIN;cs100a_edge_irq();
+  if(!echo_stuck){gpio_a.IDR&=~ULTRA_ECHO_PIN;cs100a_edge_irq();}
  }
 }
 static void make_frame(uint8_t *bytes){unsigned i;fixture[0]=83;fixture[1]=87;
@@ -101,11 +102,30 @@ int main(void){
  bytes[4]++;make_frame(bytes);assert(dht11_decode(fixture,82,&t,&h)==-1);bytes[4]--;make_frame(bytes);
  now_ms=2000;now_us=2000000;simulate_dht=1;dht11_init(SENSOR_DHT11);
  memset(&v,0,sizeof(v));assert(!dht11_read(SENSOR_DHT11,&v));assert(v.value==260&&v.auxiliary==550&&v.quality==SENSOR_GOOD);assert(!(EXTI->IMR&DHT11_PIN));
- simulate_dht=0;before=now_ms;assert(dht11_read(SENSOR_DHT11,&v)==-1);assert(now_ms-before<40);
+ fixture[3]=49;assert(dht11_read(SENSOR_DHT11,&v)==-1);
+ assert(dht11_debug()->last_error==DHT_ERR_BIT_WIDTH && dht11_debug()->bad_index==3 && dht11_debug()->bad_width_us==49);
+ make_frame(bytes);bytes[4]++;make_frame(bytes);assert(dht11_read(SENSOR_DHT11,&v)==-1);
+ assert(dht11_debug()->last_error==DHT_ERR_CHECKSUM);bytes[4]--;make_frame(bytes);
+ fixture[0]=200;assert(dht11_read(SENSOR_DHT11,&v)==-1);assert(dht11_debug()->last_error==DHT_ERR_RESPONSE_WIDTH);
+ fixture[0]=201;assert(dht11_read(SENSOR_DHT11,&v)==-1);assert(dht11_debug()->last_error==DHT_ERR_EDGE_GAP);make_frame(bytes);
+ stretch_start=1;assert(dht11_read(SENSOR_DHT11,&v)==-1);
+ assert(dht11_debug()->last_error==DHT_ERR_START_LONG && dht11_debug()->start_ms>30u);
+ stretch_start=0;assert(!dht11_read(SENSOR_DHT11,&v));
+ assert(dht11_debug()->last_error==DHT_ERR_START_LONG); /* success preserves last failure */
+ simulate_dht=0;before=now_ms;assert(dht11_read(SENSOR_DHT11,&v)==-1);assert(now_ms-before<40);assert(dht11_debug()->last_error==DHT_ERR_NO_RESPONSE);
  for(i=0;i<3;i++){unsigned j;const unsigned cm[]={10,30,50};cs100a_init(SENSOR_DISTANCE);simulate_echo=cm[i]*58;for(j=0;j<5;j++){assert(!cs100a_read(SENSOR_DISTANCE,&v));}assert(v.value==(int32_t)cm[i]);}
  cs100a_init(SENSOR_DISTANCE);simulate_echo=1740;
  for(i=0;i<5;i++){assert(!cs100a_read(SENSOR_DISTANCE,&v));}assert(v.value==30&&v.quality==SENSOR_GOOD);
- simulate_echo=0;before=now_ms;assert(cs100a_read(SENSOR_DISTANCE,&v)==-1);assert(now_ms-before<=31);
+ simulate_echo=0;before=now_ms;assert(cs100a_read(SENSOR_DISTANCE,&v)==-1);assert(now_ms-before<=31);assert(cs100a_debug()->last_error==ULTRA_ERR_NO_RISE);
+ gpio_a.IDR|=ULTRA_ECHO_PIN;assert(cs100a_read(SENSOR_DISTANCE,&v)==-1);
+ assert(cs100a_debug()->last_error==ULTRA_ERR_IDLE_HIGH);
+ gpio_a.IDR&=~ULTRA_ECHO_PIN;
+ trigger_fail=1;assert(cs100a_read(SENSOR_DISTANCE,&v)==-1);assert(cs100a_debug()->last_error==ULTRA_ERR_TRIGGER);trigger_fail=0;
+ simulate_echo=100;assert(cs100a_read(SENSOR_DISTANCE,&v)==-1);assert(cs100a_debug()->last_error==ULTRA_ERR_WIDTH);
+ simulate_echo=30000;assert(cs100a_read(SENSOR_DISTANCE,&v)==-1);assert(cs100a_debug()->last_error==ULTRA_ERR_LATE);
+ simulate_echo=1740;echo_stuck=1;assert(cs100a_read(SENSOR_DISTANCE,&v)==-1);assert(cs100a_debug()->last_error==ULTRA_ERR_NO_FALL);
+ echo_stuck=0;gpio_a.IDR&=~ULTRA_ECHO_PIN;
+ puts("PASS diagnostics: DHT start/no-response/bit/response/checksum/gap and ultrasonic idle/trigger/no-rise/no-fall/late/width");
  phase=1;now_us=0xfffffff0u;gpio_a.IDR|=ULTRA_ECHO_PIN;cs100a_edge_irq();now_us+=1740;
  gpio_a.IDR&=~ULTRA_ECHO_PIN;cs100a_edge_irq();assert(phase==3&&width==1740);
  puts("PASS actual DHT/ultrasonic: valid frame, checksum, malformed pulse, interrupt capture, unplug timeout, median30cm, uint32 wrap");return 0;
@@ -185,6 +205,10 @@ static int mock_read(sensor_id_t id,sensor_value_t *v){
 #define mq_read mock_read
 #define radar_read mock_read
 #define mcu_sensor_read mock_read
+#include "dht11.h"
+#include "cs100a.h"
+const dht11_debug_t *dht11_debug(void){static dht11_debug_t d;return &d;}
+const cs100a_debug_t *cs100a_debug(void){static cs100a_debug_t u;return &u;}
 int mq_ioctl(sensor_id_t id,unsigned cmd,void *p){(void)id;(void)cmd;(void)p;return 0;}
 #include "../../App/datahub.c"
 #include "../../Drivers_Device/sensor.c"

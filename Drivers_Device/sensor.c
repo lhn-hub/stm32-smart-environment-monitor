@@ -79,4 +79,20 @@ void sensors_log_table(void)
         (unsigned long)diag[SENSOR_DHT11].successes,(unsigned long)diag[SENSOR_DHT11].attempts,
         (unsigned long)diag[SENSOR_DHT11].consecutive_failures,(unsigned long)diag[SENSOR_DISTANCE].failures,
         (unsigned long)diag[SENSOR_DISTANCE].consecutive_failures,(unsigned long)publish_errors);
+    {
+        const dht11_debug_t *d=dht11_debug();
+        const cs100a_debug_t *u=cs100a_debug();
+        LOGI("DHT诊断 最近失败=%u 拉低=%lums 采集=%luus 段=%lu 异常段=%lu/%luus",
+            (unsigned)d->last_error,(unsigned long)d->start_ms,(unsigned long)d->capture_us,
+            (unsigned long)d->captured_widths,(unsigned long)d->bad_index,(unsigned long)d->bad_width_us);
+        LOGI("DHT失败数 拉低超时=%lu 无响应=%lu 缺段=%lu 边沿=%lu 响应宽=%lu 位宽=%lu 校验=%lu 范围=%lu",
+            (unsigned long)d->errors[DHT_ERR_START_LONG],(unsigned long)d->errors[DHT_ERR_NO_RESPONSE],
+            (unsigned long)d->errors[DHT_ERR_INCOMPLETE],(unsigned long)d->errors[DHT_ERR_EDGE_GAP],
+            (unsigned long)d->errors[DHT_ERR_RESPONSE_WIDTH],(unsigned long)d->errors[DHT_ERR_BIT_WIDTH],
+            (unsigned long)d->errors[DHT_ERR_CHECKSUM],(unsigned long)d->errors[DHT_ERR_RANGE]);
+        LOGI("超声诊断 最近失败=%u 等待=%luus 脉宽=%luus 上升=%lu 下降=%lu ECHO=%u",
+            (unsigned)u->last_error,(unsigned long)u->wait_us,(unsigned long)u->width_us,
+            (unsigned long)u->rise_irqs,(unsigned long)u->fall_irqs,
+            (unsigned)HAL_GPIO_ReadPin(ULTRA_ECHO_PORT,ULTRA_ECHO_PIN));
+    }
 }

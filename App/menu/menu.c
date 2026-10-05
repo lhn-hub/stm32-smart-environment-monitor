@@ -149,5 +149,7 @@ void menu_poll(void)
             (unsigned long)(frames*10000u/(now-last_report)),(unsigned long)s->last_us,
             (unsigned long)s->failures,(unsigned long)s->recoveries);
         frames=0;last_report=now;
+        if(s->recoveries || s->failures)LOGW("OLED诊断 最近状态=%lu 错误码=0x%lX 失败传输=%luus",
+            (unsigned long)s->last_hal_status,(unsigned long)s->last_hal_error,(unsigned long)s->last_failed_us);
     }
 }

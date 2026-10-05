@@ -3,6 +3,7 @@
 #include <stdint.h>
 typedef struct {
     uint32_t failures, recoveries, frames, last_us, max_us;
+    uint32_t last_hal_status, last_hal_error, last_failed_us;
     uint8_t online;
 } oled_stats_t;
 /** @brief Init/retry display in MenuTask. No framebuffer allocation. */

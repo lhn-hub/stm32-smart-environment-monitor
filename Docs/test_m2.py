@@ -53,7 +53,8 @@ prefix=r'''
 #define OLED_ADDR 0x78u
 #define I2C_MEMADD_SIZE_8BIT 1
 #define HAL_OK 0
-static int hi2c1,missing;
+static struct {uint32_t ErrorCode;} hi2c1;
+static int missing;
 static uint32_t now,us;
 static unsigned writes,recoveries;
 uint32_t HAL_GetTick(void){return now;}
@@ -62,7 +63,7 @@ int bsp_i2c_recover(void){recoveries++;return 0;}
 static int HAL_I2C_Mem_Write(void *h,unsigned addr,unsigned control,unsigned mode,
  uint8_t *data,unsigned n,unsigned timeout){
  (void)h;(void)mode;(void)data;(void)timeout;assert(addr==0x78u);assert(control==0||control==0x40);
- writes++;us+=(n+2)*23;return missing?-1:0;
+ writes++;us+=(n+2)*23;hi2c1.ErrorCode=missing?4u:0u;return missing?1:0;
 }
 #include "../../Drivers_Device/oled_ssd1306/ssd1306.c"
 '''
@@ -74,9 +75,11 @@ int main(void){
  oled_pixel(2,2,1);assert(oled_flush(0)==0 && writes==n+5);
  oled_pixel(-1,-1,1);oled_pixel(128,64,1);n=writes;assert(oled_flush(0)==0 && writes==n);
  missing=1;oled_pixel(0,0,1);assert(oled_flush(0)==-1 && !stats.online);
+ assert(oled_stats()->last_hal_status==1 && oled_stats()->last_hal_error==4 && oled_stats()->last_failed_us>0);
  n=writes;assert(oled_flush(0)==-1 && writes==n);
  missing=0;now+=APP_OLED_RETRY_MS;assert(oled_flush(0)==0);
  assert(stats.online && stats.failures==0 && recoveries==1 && stats.recoveries==1);
+ assert(oled_stats()->last_hal_error==4); /* retain failure after successful recovery */
  oled_clear();oled_text(0,0,"sms-hub 6x8",0);oled_text(0,12,"8x16",1);
  for(n=0;n<7;n++)oled_hanzi(n*16,36,n);
  {FILE *f=fopen("tmp/m2/fonts.pbm","wb");unsigned x,y;assert(f);fprintf(f,"P1\n128 64\n");

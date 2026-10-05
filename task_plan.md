@@ -4,7 +4,7 @@
 按用户 M0、附件 A/B 完成 CubeMX/Keil 工程，真实编译与 DAP 验证后提交并标记 v0.1。
 
 ## Current Phase
-M3软件驱动、sensor_ops/DataHub、菜单联动及主机回归已完成；编译0错误0警告。MQ正式禁用，物理精度/时序与开路诊断限制仍未验收。
+M3上板发现DHT累计成功率低、超声无有效读数及OLED偶发恢复。诊断版构建/主机验证完成，待自动失败分类日志定位根因。
 
 ### Phase 1: 工具链与硬件约束核查
 **Status:** complete
@@ -22,7 +22,7 @@ M3软件驱动、sensor_ops/DataHub、菜单联动及主机回归已完成；编
 - 完成后提交 [M0] 工程:建立脚手架，打 tag v0.1。
 
 ## Next Step
-用户烧录M3检查DHT/距离/雷达和统一日志；MQ保持断开。安全电平问题及实物验收通过后再创建v0.4。
+用户烧录诊断版，约30秒后提供采集统计、DHT/超声/OLED诊断；据实际失败阶段作最小修复，MQ保持断开。
 
 ### Phase 6: M3传感器与DataHub
 **Status:** in_progress
