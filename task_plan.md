@@ -4,7 +4,7 @@
 按用户 M0、附件 A/B 完成 CubeMX/Keil 工程，真实编译与 DAP 验证后提交并标记 v0.1。
 
 ## Current Phase
-M2三键菜单获用户“功能完整”确认，记录功能验收并发布v0.3；等待M3。
+M3用户取消标定表回填，采用厂家资料与GitHub交叉核对的默认配置；Rd-03型号已确认，MQ电气接入未解决。
 
 ### Phase 1: 工具链与硬件约束核查
 **Status:** complete
@@ -22,7 +22,13 @@ M2三键菜单获用户“功能完整”确认，记录功能验收并发布v0.
 - 完成后提交 [M0] 工程:建立脚手架，打 tag v0.1。
 
 ## Next Step
-等待用户发送M3任务，不提前实施后续阶段。
+按Docs/M3-defaults.md继续M3驱动与sensor_ops/DataHub；不再索要标定表，MQ未安全接入时不得标为正常。
+
+### Phase 6: M3传感器与DataHub
+**Status:** in_progress
+- 前置标定作业单已保存；未实现传感器驱动。
+- 保留TIM4完整微秒时间戳，实施时按M3更新30ms超时。
+- DHT11全帧与<2ms关中断冲突、单DO断线不可观测限制需明确。
 
 ### Phase 5: M2 OLED、EC11与菜单
 **Status:** complete

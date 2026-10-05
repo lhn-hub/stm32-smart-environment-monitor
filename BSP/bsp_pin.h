@@ -107,10 +107,15 @@ extern "C" {
 #define ULTRA_ECHO_PORT            GPIOA
 #define ULTRA_ECHO_PIN             GPIO_PIN_15
 #define ULTRA_TRIG_PULSE_US        12u
-#define ULTRA_ECHO_TIMEOUT_US      38000u
+#define ULTRA_ECHO_TIMEOUT_US      30000u
 #define ULTRA_FILTER_N             5u
 
-/* AT6010 GPIO mode; polarity is provisional until M3 verification. */
+/* Ai-Thinker Rd-03, user-confirmed replacement for AT6010.
+ * OT2 -> PB4: detection high, no detection low (datasheet V1.1.1 p9).
+ * OT1/RX are for external USB-TTL setup only; USART3 stays with ESP8266.
+ */
+#define RADAR_MODEL                "Rd-03"
+#define RADAR_CONFIG_UART_BAUD     115200u
 #define RADAR_PORT                 GPIOB
 #define RADAR_PIN                  GPIO_PIN_4
 #define RADAR_ACTIVE_LEVEL         GPIO_PIN_SET
@@ -123,13 +128,15 @@ extern "C" {
 #define MQ_AIR_PIN                 GPIO_PIN_14
 #define MQ_ALARM_LEVEL             GPIO_PIN_RESET
 #define MQ_SCAN_PERIOD_MS          200u
-#define MQ_WARMUP_S                150u
+/* Module manual recommends at least five minutes; not a substitute for aging. */
+#define MQ_WARMUP_S                300u
 
 /* DHT11: input/open-drain direction switching, no long busy wait. */
 #define DHT11_PORT                 GPIOB
 #define DHT11_PIN                  GPIO_PIN_12
-#define DHT11_PERIOD_MS            2000u
-#define DHT11_START_LOW_MS         18u
+/* Datasheet requests >2s;20ms start agrees with Adafruit DHT11 implementation. */
+#define DHT11_PERIOD_MS            2100u
+#define DHT11_START_LOW_MS         20u
 #define DHT11_FAULT_LIMIT          10u
 
 /* EC11 A/B; SW unconnected. Confirm=PB15; Back=PC13. */
