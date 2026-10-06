@@ -7,7 +7,7 @@ out=root/'tmp/m2';out.mkdir(exist_ok=True)
 def compile_run(name,source):
     (out/(name+'.c')).write_text(source,encoding='utf-8')
     subprocess.run(['D:/msys64/ucrt64/bin/gcc.exe','-std=c99','-Wall','-Wextra','-Werror',
-      '-I','Drivers_Device','-I','BSP','-I','App','-I','Inc','-I','Drivers_Device/ec11','-I','Drivers_Device/oled_ssd1306','-I','App/menu',
+      '-I','Drivers_Device/kvstore','-I','Drivers_Device/eventlog','-I','Drivers_Device','-I','BSP','-I','App','-I','Inc','-I','Drivers_Device/ec11','-I','Drivers_Device/oled_ssd1306','-I','App/menu',
       '-I','Drivers_Device/oled_ui','-I','tmp/m2','tmp/m2/'+name+'.c','-o','tmp/m2/'+name+'.exe'],cwd=root,env=env,check=True)
     subprocess.run([str(out/(name+'.exe'))],cwd=root,env=env,check=True)
 ec=(root/'Drivers_Device/ec11/ec11.c').read_text(encoding='utf-8')
@@ -50,6 +50,7 @@ prefix=r'''
 #define DEF_AIR_CONFIRM_MS 10000
 #define MQ_WARMUP_S 150
 #define RGB_ARR 999
+#define KV_RECORD_SIZE 512u
 #define OLED_ADDR 0x78u
 #define I2C_MEMADD_SIZE_8BIT 1
 #define HAL_OK 0
@@ -105,6 +106,13 @@ compile_run('menu',prefix+r'''
 #include "datahub.h"
 int datahub_snapshot(datahub_snapshot_t *p){memset(p,0,sizeof(*p));p->sensors[SENSOR_DHT11].value=260;p->sensors[SENSOR_DHT11].auxiliary=550;p->sensors[SENSOR_SMOKE].flags=p->sensors[SENSOR_AIR].flags=SENSOR_DISABLED;return 0;}
 int datahub_set_gas_limits(uint32_t s,uint32_t a){(void)s;(void)a;return 0;}
+#include "storage.h"
+static int32_t persisted[CFG_FIELD_COUNT]={50,100,3000,10000,0};
+static unsigned history_reads,save_calls;
+int storage_get_fields(int32_t v[CFG_FIELD_COUNT],storage_status_t *s){memcpy(v,persisted,sizeof(persisted));memset(s,0,sizeof(*s));s->ready=1;return 0;}
+int storage_set(unsigned field,int32_t v){assert(field<CFG_FIELD_COUNT);persisted[field]=v;save_calls++;return 0;}
+int storage_event(uint32_t t,int32_t p,int32_t a){(void)t;(void)p;(void)a;return 0;}
+int storage_recent(unsigned index,event_record_t *r,unsigned *n){*n=20;if(index>=20)return -1;memset(r,0,sizeof(*r));r->seq=20-index;r->type=1;r->unix_time=1234;history_reads++;return 0;}
 static int pending,beeps;
 static unsigned colors;
 void ec11_start(void){}
@@ -130,6 +138,9 @@ int main(void){
  menu_key(&next);menu_poll();assert(values[0]==51);menu_key(&prev);menu_poll();assert(values[0]==50);
  menu_key(&hold);menu_key(&next);menu_poll();assert(values[0]==60);
  for(i=0;i<100;i++){menu_key(&next);}menu_poll();assert(values[0]==APP_EDIT_MAX_TEMP);
+ assert(save_calls==0);menu_key(&yes);assert(!editing&&save_calls==1&&persisted[0]==APP_EDIT_MAX_TEMP);
+ menu_key(&back);selected[ROOT]=5;menu_key(&yes);now+=100;menu_poll();
+ assert(history_count==20&&history_reads>0);selected[EVENTLOG]=19;menu_key(&next);assert(selected[EVENTLOG]==0);
  menu_key(&back);selected[ROOT]=3;menu_key(&yes);menu_key(&yes);assert(beeps==1);
  selected[MANUAL]=1;menu_key(&yes);assert(colors==999);selected[MANUAL]=4;menu_key(&yes);assert(colors==0);
  for(i=0;i<PAGE_COUNT;i++){

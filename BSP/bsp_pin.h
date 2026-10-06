@@ -252,7 +252,7 @@ extern TIM_HandleTypeDef htim4;
 #define FLASH_KV_BANK_A_ADDR       FLASH_KV_ADDR_A
 #define FLASH_KV_BANK_B_ADDR       FLASH_KV_ADDR_B
 #define FLASH_KV_BANK_SIZE         W25Q_SECTOR_SIZE
-#define KV_RECORD_SIZE            128u
+#define KV_RECORD_SIZE            512u
 #define KV_SLOTS_PER_BANK          (FLASH_KV_BANK_SIZE / KV_RECORD_SIZE)
 #define FLASH_KV_RECORD_SIZE       KV_RECORD_SIZE
 #define FLASH_KV_SLOTS_PER_BANK    KV_SLOTS_PER_BANK

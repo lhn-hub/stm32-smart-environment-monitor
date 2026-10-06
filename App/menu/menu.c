@@ -3,6 +3,7 @@
 #include "oled_ui.h"
 #include "app_config.h"
 #include "datahub.h"
+#include "storage.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include <stdio.h>
@@ -15,6 +16,9 @@ static int values[4]={DEF_TEMP_ALARM_C_X10/10,DEF_INTRUSION_DIST_CM,DEF_SMOKE_CO
 static const int maxima[4]={APP_EDIT_MAX_TEMP,APP_EDIT_MAX_DISTANCE,APP_EDIT_MAX_CONFIRM_MS,APP_EDIT_MAX_CONFIRM_MS};
 static uint32_t deadline,last_report,frames,accelerate_until;
 static char text[48];
+static storage_status_t store_state;
+static int32_t committed_fields[CFG_FIELD_COUNT];
+static unsigned history_count;
 static datahub_snapshot_t sensors;
 static void no_op(void) {}
 static page_id current(void) { return stack[depth]; }
@@ -68,12 +72,12 @@ static void render_root(void) { render_list("MENU",root_labels,8); }
 static void render_arm(void)
 {
     header("ARM");oled_hanzi(0,16,armed?2:4);oled_hanzi(16,16,3);
-    oled_text(0,40,armed?"ARMED (RAM)":"DISARMED (RAM)",0);oled_text(0,56,"PB15:TOGGLE",0);
+    oled_text(0,40,armed?"ARMED":"DISARMED",0);oled_text(0,56,"PB15:TOGGLE",0);
 }
 static const char *threshold_labels[]={"Temp C","Distance cm","Smoke ms","Air ms"};
 static void render_thresholds(void)
 {
-    unsigned i;header(editing?"EDIT KEY1:+ HOLD:-":"THRESHOLDS");
+    unsigned i;header(!store_state.ready?"STORE OFFLINE":store_state.pending?"SAVING...":editing?"EDIT KEY1:+ HOLD:-":"THRESHOLDS");
     for(i=0;i<4;i++){snprintf(text,sizeof(text),"%s:%d",threshold_labels[i],values[i]);row(i,text,i==selected[THRESHOLDS]);}
     if(editing){unsigned s=selected[THRESHOLDS];ui_progress(0,52,128,9,values[s],maxima[s]);}
 }
@@ -87,7 +91,20 @@ static void render_manual(void)
     render_list("MANUAL TEST",manual_labels,9);
 }
 static void render_network(void) {header("NETWORK");oled_text(0,18,"WiFi: offline",0);oled_text(0,30,"MQTT: offline",0);oled_text(0,44,"M6 placeholder",0);}
-static void render_log(void) {header("EVENT LOG");oled_text(0,24,"M4 placeholder",0);}
+static void render_log(void)
+{
+    event_record_t r;unsigned i,first=selected[EVENTLOG]>=APP_MENU_ROWS?selected[EVENTLOG]-APP_MENU_ROWS+1u:0;
+    header("EVENT LOG newest");
+    for(i=0;i<APP_MENU_ROWS;i++){
+        if(storage_recent(first+i,&r,&history_count))break;
+        snprintf(text,sizeof(text),"#%lu T%lu P%ld",(unsigned long)r.seq,(unsigned long)r.type,(long)r.parameter);
+        row(i,text,first+i==selected[EVENTLOG]);
+    }
+    if(!history_count)oled_text(0,24,"No stored events",0);
+    if(!storage_recent(selected[EVENTLOG],&r,&history_count)){
+        snprintf(text,sizeof(text),"UTC:%lu V:%ld",(unsigned long)r.unix_time,(long)r.auxiliary);oled_text(0,56,text,0);
+    }
+}
 static void render_system(void)
 {
     const oled_stats_t *s=oled_stats();header("SYSTEM");
@@ -95,7 +112,7 @@ static void render_system(void)
     snprintf(text,sizeof(text),"VDDA:%lumV nominal",(unsigned long)vdda_mv_get());oled_text(0,22,text,0);
     snprintf(text,sizeof(text),"Stack:%lu/%u words",(unsigned long)uxTaskGetStackHighWaterMark(NULL),APP_MENU_STACK);oled_text(0,30,text,0);
     snprintf(text,sizeof(text),"I2C fail:%lu rec:%lu",(unsigned long)s->failures,(unsigned long)s->recoveries);oled_text(0,38,text,0);
-    snprintf(text,sizeof(text),"refresh:%luus",(unsigned long)s->last_us);oled_text(0,46,text,0);
+    snprintf(text,sizeof(text),"Erase boot:%lu E:%lu",(unsigned long)store_state.erases,(unsigned long)store_state.errors);oled_text(0,46,text,0);
     oled_text(0,56,APP_FW_VERSION,0);
 }
 static void render_about(void){header("ABOUT");oled_text(0,18,"sms-hub",1);oled_text(0,40,APP_FW_VERSION,0);oled_text(0,52,"STM32F103 FreeRTOS",0);}
@@ -105,9 +122,14 @@ static void select_key(int key)
     if(key<0){if(id==MANUAL && font_test){font_test=0;return;}pop();return;}
     if(id==HOME)push(ROOT);
     else if(id==ROOT){static const page_id target[]={HOME,ARM,THRESHOLDS,MANUAL,NETWORK,EVENTLOG,SYSTEM,ABOUT};if(s==0){depth=0;}else push(target[s]);}
-    else if(id==ARM)armed=!armed;
-    else if(id==THRESHOLDS){if(key==2 && editing)accelerate_until=HAL_GetTick()+APP_EDIT_ACCEL_MS;else editing=!editing;}
+    else if(id==ARM){if(storage_set(CFG_MODE,!armed))LOGW("布防保存未提交：存储忙或离线");}
+    else if(id==THRESHOLDS){
+        if(key==2 && editing)accelerate_until=HAL_GetTick()+APP_EDIT_ACCEL_MS;
+        else if(editing){if(!storage_set(s,values[s]))editing=0;else LOGW("配置未保存：存储忙或离线");}
+        else if(store_state.ready && !store_state.pending)editing=1;
+    }
     else if(id==MANUAL){
+        if(s<=4 && storage_event(EVENT_MANUAL,(int32_t)s,0))LOGW("手动测试事件未入队");
         switch(s){case 0:beep_ms(APP_MENU_BEEP_MS);break;case 1:rgb_set(RGB_ARR,0,0);break;
         case 2:rgb_set(0,RGB_ARR,0);break;case 3:rgb_set(0,0,RGB_ARR);break;case 4:rgb_set(0,0,0);break;
         case 5:i2c_scan();break;case 8:font_test=!font_test;break;default:break;}
@@ -125,9 +147,8 @@ static void navigate(int steps)
     if(id==HOME){push(ROOT);return;}
     if(steps){
         if(id==THRESHOLDS && editing){unsigned s=selected[id];int gain=(int32_t)(accelerate_until-now)>0?APP_EDIT_ACCEL:1;
-            values[s]+=steps*gain;if(values[s]<0)values[s]=0;if(values[s]>maxima[s])values[s]=maxima[s];
-            if(s>=2 && datahub_set_gas_limits((uint32_t)values[2],(uint32_t)values[3]))LOGW("阈值暂未同步");}
-        else {int count=id==ROOT?8:id==THRESHOLDS?4:id==MANUAL?9:1;int n=(int)selected[id]+steps;
+            values[s]+=steps*gain;if(values[s]<0)values[s]=0;if(values[s]>maxima[s])values[s]=maxima[s];}
+        else {int count=id==ROOT?8:id==THRESHOLDS?4:id==MANUAL?9:id==EVENTLOG?(history_count?(int)history_count:1):1;int n=(int)selected[id]+steps;
             if(n<0)n=count-1;
             if(n>=count)n=0;
             selected[id]=(unsigned)n;}
@@ -141,7 +162,11 @@ void menu_key(const key_event_t *e)
 }
 void menu_poll(void)
 {
-    uint32_t now=HAL_GetTick();page_id id=current();
+    uint32_t now=HAL_GetTick();page_id id=current();unsigned i;
+    if(!storage_get_fields(committed_fields,&store_state)){
+        armed=committed_fields[CFG_MODE]!=0;
+        if(!editing && !store_state.pending)for(i=0;i<4;i++)values[i]=(int)committed_fields[i];
+    }
     if((int32_t)(now-deadline)>=0){deadline=now+APP_OLED_FRAME_MS;oled_clear();pages[id].render();if(!oled_flush(0))++frames;}
     if(now-last_report>=APP_STATUS_MS){
         const oled_stats_t *s=oled_stats();

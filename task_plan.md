@@ -1,10 +1,17 @@
 # sms-hub M0 工程脚手架
 
+## M4当前工作
+M4软件、主机故障注入和编译完成；等待W25Q ID及真实掉电验收。独立4KB Bank、512B槽，Flash53664B/RAM19464B。M3物理遗留未冒充通过。
+### Phase 7: M4掉电存储
+**Status:** in_progress
+- 驱动及提交协议、主机断电注入、LogTask异步队列、最近20条浏览。
+- 超60KB Flash/20KB RAM须先报告；v0.5待实物断电验收。
+
 ## Goal
 按用户 M0、附件 A/B 完成 CubeMX/Keil 工程，真实编译与 DAP 验证后提交并标记 v0.1。
 
 ## Current Phase
-M3超声管脚修订获用户确认，已改PA15触发/PB3 EXTI3回波，GPIO/中断/IOC及回归通过；全量0错误0警告。等待新固件实板三距离复测，MQ仍禁用。
+M4软件交付、真实断电验收待执行；M3传感器物理遗留继续记录，MQ禁用。
 
 ### Phase 1: 工具链与硬件约束核查
 **Status:** complete
@@ -22,7 +29,7 @@ M3超声管脚修订获用户确认，已改PA15触发/PB3 EXTI3回波，GPIO/�
 - 完成后提交 [M0] 工程:建立脚手架，打 tag v0.1。
 
 ## Next Step
-用户先断电拔超声模块烧录，完成后断电按原接口插回；复测10/30/50cm、质量与边沿计数。通过后再处理其余M3验收和v0.4。
+用户按Docs/M4-acceptance.md接3.3V W25Q，验证ID、20次保存复位、500次轮换与人工断电。真实验收后再发布里程碑。
 
 ### Phase 6: M3传感器与DataHub
 **Status:** in_progress

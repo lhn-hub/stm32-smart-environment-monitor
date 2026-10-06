@@ -1,5 +1,7 @@
 # sms-hub
 
+M4软件已实现：W25Q64总线互斥、双4KB Bank配置（512B槽）、64KB事件环、LogTask队列、菜单确认落盘和最近20条事件。默认`Docs/build.ps1`构建M4；接线/真实断电测试见`Docs/M4-acceptance.md`。W25Q供电3V3，TB6612/电机暂断开，MQ DO仍保持断开。存储未就绪时显示STORE OFFLINE，不能假定配置已保存。真实M4断电验收未执行，v0.5未打标；下方旧阶段内容为历史记录。
+
 **最新超声波接线修订（2026-10-07已确认）：TRIG=PA15、ECHO=PB3/EXTI3**，模块原接口直插。旧PB3触发/PA15回波描述错误且已修正；烧录前断电拔下模块，烧录完成后断电插回，避免旧固件输出争用。详情见`Docs/M3-ultrasonic-root-cause.md`。
 
 M3软件已集成：六实例sensor_ops注册表、DHT11/超声/Rd-03/MQ门控/MCU ADC、滤波与互斥DataHub，主页显示真实值和质量。`Docs/build.ps1`现默认构建M3；操作和串口格式见`Docs/M3-acceptance.md`。MQ DO必须断开，正式构建仍禁用，不把5V电平问题当成软件可修复。v0.4待实物验收，M2以下说明保留为历史。

@@ -7,6 +7,7 @@
 #include "menu.h"
 #include "sensor.h"
 #include "datahub.h"
+#include "storage.h"
 int bsp_adc_start(void);
 int bsp_rtc_start(void);
 int bsp_net_start(void);
@@ -37,6 +38,8 @@ static void worker(void *argument)
         if(id!=0 && m1_stall_task==id) vTaskSuspend(NULL);
 #endif
         if(!started) {
+            if(id==5 && !(ready&(1u<<3))){vTaskDelay(pdMS_TO_TICKS(APP_MONITOR_PERIOD_MS));continue;}
+            if(id==5)storage_start();
             if(id==2 && bsp_net_start()) bsp_panic("串口3初始化失败");
             if(id==3) {
                 if(bsp_adc_start()) bsp_panic("ADC初始化失败");
@@ -88,6 +91,7 @@ static void worker(void *argument)
                 if(ui_started) menu_key(&e);
             }
         }
+        if(id==5)storage_poll();
         if(id==3)sensors_poll();
         if(id==4 && ui_started) menu_poll();
         if(now-last_status>=APP_STATUS_MS) {
@@ -105,6 +109,7 @@ void app_start(void)
     unsigned i;
     if(bsp_services_init()) bsp_panic("板级服务初始化失败");
     if(datahub_init())bsp_panic("DataHub初始化失败");
+    if(storage_setup())bsp_panic("存储队列初始化失败");
     heartbeats=xEventGroupCreate();
     if(!heartbeats) bsp_panic("心跳内存分配失败");
     for(i=0;i<APP_TASK_COUNT;i++)

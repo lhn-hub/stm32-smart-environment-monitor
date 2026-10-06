@@ -677,9 +677,6 @@
           </Files>
         </Group>
         <Group>
-          <GroupName>::CMSIS</GroupName>
-        </Group>
-        <Group>
           <GroupName>M3</GroupName>
           <Files>
             <File>
@@ -721,6 +718,39 @@
               <FileName>datahub.c</FileName>
               <FileType>1</FileType>
               <FilePath>../App/datahub.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>::CMSIS</GroupName>
+        </Group>
+        <Group>
+          <GroupName>M4</GroupName>
+          <Files>
+            <File>
+              <FileName>bus_arbiter.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../BSP/bus_arbiter.c</FilePath>
+            </File>
+            <File>
+              <FileName>w25q64.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Drivers_Device/w25q64/w25q64.c</FilePath>
+            </File>
+            <File>
+              <FileName>kvstore.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Drivers_Device/kvstore/kvstore.c</FilePath>
+            </File>
+            <File>
+              <FileName>eventlog.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Drivers_Device/eventlog/eventlog.c</FilePath>
+            </File>
+            <File>
+              <FileName>storage.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../App/storage.c</FilePath>
             </File>
           </Files>
         </Group>

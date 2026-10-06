@@ -1,0 +1,22 @@
+PASS actual W25Q/arbiter: identity, WEL, page/alignment validation, readback, busy timeout, failure cleanup, no MISO output, fault/ISR guards
+PASS KV500 saves with reset each time; alternating independent sectors/CRC
+PASS KV power cuts at every byte of sector erase/data/commit; old-or-new only, resave after reboot
+PASS blank initialization power cuts recover without erasing sole valid default
+PASS events2200 entries:64KB ring wrap, newest20 CRC/sequence after reboot
+PASS event power cuts at every erase/data/commit byte: last committed survives, next seq continuous
+PASS partial erase of oldest sector at full-ring wrap preserves latest records
+PASS torn first log entry recovery; reserved sector never mutated
+PASS corrupted newest KV falls back; sequence wrap selects newest committed record
+PASS actual storage queue: offline/busy/full refusal, apply after commit only, failure retains prior visible/durable config
+PASS EC11 actual decoder: +20/-20, no reverse, bounced edges, invalid two-bit transitions
+PASS OLED console contention: deferred frame retains online/dirty state; lock released on success and failure
+PASS OLED actual driver: 1KB buffer, dirty page/no-op refresh, clipping, unplug/retry/recover/reset consecutive failures
+PASS actual menu: every page reachable/back, depth3, edit/accelerate/clamp, manual beep/RGB, all pages rendered
+PASS actual console exclusion: existing mutex, bounded wait, IRQ/critical/startup rejection, release
+PASS diagnostics: DHT start/no-response/bit/response/checksum/gap and ultrasonic idle/trigger/no-rise/no-fall/late/width
+PASS actual DHT/ultrasonic: valid frame, checksum, malformed pulse, interrupt capture, unplug timeout, median30cm, uint32 wrap
+PASS actual MQ guard/filter/Rd03: disabled unsafe DO, bounds, warmup metadata, assert/release times, wrap, median,1s debounce
+PASS host-only enabled MQ path: raw DO, warmup suppression, confirm/release, runtime config, no repeated warmup after tick wrap
+PASS MCU wrapper: temperature FAULT preserved, VDDA auxiliary GOOD/STALE/FAULT
+PASS actual registry/DataHub: six sensor_read entries, failure limits, timestamp retention, recovery, stale snapshots, mutex failure, invalid ID
+PASS final normal ELF excludes storage_bench_request; stress build compiled separately. Hardware power-cut NOT tested.
