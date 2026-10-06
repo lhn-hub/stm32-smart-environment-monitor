@@ -198,6 +198,12 @@ void EXTI0_IRQHandler(void)
   /* USER CODE END EXTI0_IRQn 1 */
 }
 
+/** @brief CS100A PB3 ECHO: pending-bit dispatch, no blocking work. */
+void EXTI3_IRQHandler(void)
+{
+  HAL_GPIO_EXTI_IRQHandler(ULTRA_ECHO_PIN);
+}
+
 /**
   * @brief This function handles EXTI line4 interrupt.
   */
@@ -291,7 +297,6 @@ void EXTI15_10_IRQHandler(void)
   /* USER CODE BEGIN EXTI15_10_IRQn 0 */
 
   /* USER CODE END EXTI15_10_IRQn 0 */
-  HAL_GPIO_EXTI_IRQHandler(ULTRA_ECHO_PIN);
   HAL_GPIO_EXTI_IRQHandler(DHT11_PIN);
   HAL_GPIO_EXTI_IRQHandler(KEY_PC13_PIN);
   /* USER CODE BEGIN EXTI15_10_IRQn 1 */

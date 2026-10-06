@@ -1,5 +1,7 @@
 # M3传感器驱动与DataHub交付
 
+最新超声波修订已获用户确认：PA15=TRIG、PB3=ECHO（EXTI3优先级5），不再使用PA15回波输入。请按M3-ultrasonic-root-cause.md的最新烧录/复测步骤执行。最新全量Flash45484B/RAM16960B；后文最初构建数字为历史基线。
+
 构建日期：2026-10-06。最终Code=40040、RO=3912、RW=112、ZI=16704；Flash44064B、RAM16816B，相比v0.3的39464B/15832B分别增加4600B/984B。距60KB Flash上限剩17376B，距20KB RAM剩3664B；11KB RTOS堆已包含在RAM中，任务栈不重复相加。
 
 ## 本次状态
@@ -8,7 +10,7 @@
 
 ## 接线检查
 - DHT11：PB12 DATA、3V3/GND，使用原通用IO3，核对供电/数据上拉均为3.3V；不要将模块高压上拉直接接入PB12。
-- CS100A：PB3 TRIG、PA15 ECHO，保留原接口/供电；TIM4为1MHz/每ms回卷的HAL时基，测量使用完整bsp_micros时间戳。
+- CS100A：PA15 TRIG、PB3 ECHO，保留原接口/供电；TIM4为1MHz/每ms回卷的HAL时基，测量使用完整bsp_micros时间戳。
 - Rd-03：3V3/GND、OT2→PB4，高有效，3.3V电源需有≥200mA供电能力；OT1/RX不接USART3。
 - MQ2/MQ135 DO：暂不接PB0/PB14；即使软件禁用也不会隔离实际5V，必须物理断开。日后启用必须先处理电平，不可直接将宏改1后接原5V DO。
 - 电机仍不接；USB Device口不接。CH340串口115200、8N1、UTF-8。
@@ -17,12 +19,12 @@
 - `Drivers_Device/sensor.h/.c`：6项固定注册表与sensor_ops_t；sensor_read读取统一缓存，sensor_ioctl获取诊断/修改气体确认时间，SensorTask用ops.read采集后再次通过sensor_read统一发布。
 - `App/datahub.h/.c`：约192B的快照含各实例值、质量、时间戳、辅助值、辅助质量、flags及warmup_remaining_ms。互斥只包围内存复制，不在锁中等待硬件或打印。失败保持上次成功时间戳；快照超过各设备周期×3为STALE，已有FAULT不升级。
 - `Drivers_Device/dht11/dht11.h/.c`：20ms开漏低电平启动（任务阻塞让出CPU），PB12/EXTI12有序脉宽捕获，82段响应/数据宽度、40bit解码与累加校验、温湿度×10整数，2100ms周期，5样本滑动均值。通信失败清空均值窗口，连续10次失败FAULT，恢复一帧后重新积累。
-- `Drivers_Device/cs100a/cs100a.h/.c`：12us触发，Echo双沿ISR只取时间戳，任务等待30ms超时；5样本中值先作用在us再四舍五入为cm；累计不足5样本STALE，连续5次失败FAULT，成功后自动恢复并重新填中值窗口。
+- `Drivers_Device/cs100a/cs100a.h/.c`：12us触发，PB3/EXTI3双沿ISR只取时间戳，任务等待30ms超时；5样本中值先作用在us再四舍五入为cm；累计不足5样本STALE，连续5次失败FAULT，成功后自动恢复并重新填中值窗口。
 - `Drivers_Device/mq_gas/mq_gas.h/.c`：smoke/air两个实例，200ms扫描、低有效、300秒预热倒计时，预热期输出STALE且报警值0，辅助值保留原始DO。已通过主机模拟验证启用路径；正式固件安全门关闭，FAULT并带DISABLED标志，绝不显示正常空气。烟雾确认3秒、空气确认10秒，解除10秒；阈值菜单确认时间通过DataHub同步，仅RAM有效。
 - `Drivers_Device/radar_rd03/radar_rd03.h/.c`：PB4高有效，确认/解除均1秒。开机前1秒为STALE，此后质量GOOD仅表示电平采样与消抖有效，不表示验证了设备在线。带NO_OPEN_WIRE_TEST标志。
 - `Drivers_Device/mcu_internal/mcu_internal.h/.c`：M1温度函数/ADC快照注册到同一接口；温度继续FAULT，辅助VDDA为标称估算，保留原ADC采样时间；无新DMA采样超过1秒为STALE，ADC错误/零值FAULT。
 - `Middleware/filter/sensor_filter.h/.c`：固定5样本中值/均值、带独立确认/解除时长的二态滤波器；整数，无动态大缓冲。
-- `BSP/bsp_controls.c`、`Src/stm32f1xx_it.c`：共享EXTI15_10先PA15超声，再PB12 DHT，再PC13；没有EC11。DHT12仅在接收期间开启，完成后显式关闭IMR，因为F1 HAL_GPIO_Init(INPUT)不会自动关闭已有EXTI。
+- `BSP/bsp_controls.c`、`Src/stm32f1xx_it.c`：EXTI3处理PB3超声；共享EXTI15_10先PB12 DHT，再PC13；没有EC11。DHT12仅在接收期间开启，完成后显式关闭IMR，因为F1 HAL_GPIO_Init(INPUT)不会自动关闭已有EXTI。
 - `BSP/bsp_analog_rtc.c`：记录ADC DMA时间戳，提供任务原子快照。
 - `App/tasks/app_tasks.c`：SensorTask枚举采样/发布/统一日志，原6栈和11KB heap不变；修正监控检查使用旧循环时间可能早于最新心跳而无符号下溢的问题。
 - `App/menu/menu.c`：主页显示DHT温湿度、距离、雷达检测及MQ禁用/报警状态；FAULT显示文字而非虚构数值，STALE以标志显示。网络状态仍为后续阶段占位。

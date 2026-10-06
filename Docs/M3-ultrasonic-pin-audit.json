@@ -1,0 +1,34 @@
+{
+  "date": "2026-10-07",
+  "archive": "野火小智超声波测距模块.zip",
+  "sha256": "3edd0b18848f09c06cae4dfa301b2b4ea7aef9147da3a5fcc475f133ed7ed4b2",
+  "checks": [
+    {
+      "signal": "TRIG",
+      "vendor": "GPIOA:GPIO_PIN_15",
+      "firmware": "GPIOB:GPIO_PIN_3",
+      "matches": false
+    },
+    {
+      "signal": "ECHO",
+      "vendor": "GPIOB:GPIO_PIN_3",
+      "firmware": "GPIOA:GPIO_PIN_15",
+      "matches": false
+    }
+  ],
+  "verified_after_user_approval": [
+    {
+      "signal": "TRIG",
+      "vendor": "GPIOA:GPIO_PIN_15",
+      "firmware": "GPIOA:GPIO_PIN_15",
+      "matches": true
+    },
+    {
+      "signal": "ECHO",
+      "vendor": "GPIOB:GPIO_PIN_3",
+      "firmware": "GPIOB:GPIO_PIN_3",
+      "matches": true
+    }
+  ],
+  "firmware_pin_sha256": "537754073317afc83eb0fb46867734738358c4fbab495ceb56a19406eec901c1"
+}

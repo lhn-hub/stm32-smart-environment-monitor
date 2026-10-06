@@ -88,13 +88,15 @@ void vTaskDelay(unsigned ticks){
   for(i=0;i<DHT11_CAPTURE_WIDTHS;i++){now_us+=fixture[i];gpio_b.IDR^=DHT11_PIN;dht11_edge_irq();}
  }
  if(phase==1 && simulate_echo){
-  gpio_a.IDR|=ULTRA_ECHO_PIN;cs100a_edge_irq();now_us+=simulate_echo;
-  if(!echo_stuck){gpio_a.IDR&=~ULTRA_ECHO_PIN;cs100a_edge_irq();}
+  gpio_b.IDR|=GPIO_PIN_3;cs100a_edge_irq();now_us+=simulate_echo;
+  if(!echo_stuck){gpio_b.IDR&=~GPIO_PIN_3;cs100a_edge_irq();}
  }
 }
 static void make_frame(uint8_t *bytes){unsigned i;fixture[0]=83;fixture[1]=87;
  for(i=0;i<40;i++){fixture[2+2*i]=54;fixture[3+2*i]=(bytes[i/8]&(0x80u>>(i%8)))?71:24;}}
 int main(void){
+ assert(ULTRA_TRIG_PORT==&gpio_a && ULTRA_TRIG_PIN==GPIO_PIN_15);
+ assert(ULTRA_ECHO_PORT==&gpio_b && ULTRA_ECHO_PIN==GPIO_PIN_3);
  uint8_t bytes[5]={55,0,26,0,81};int32_t t,h;sensor_value_t v;unsigned i;uint32_t before;
  make_frame(bytes);
  for(i=0;i<50;i++){assert(!dht11_decode(fixture,82,&t,&h));assert(t==260&&h==550);}
@@ -117,17 +119,17 @@ int main(void){
  cs100a_init(SENSOR_DISTANCE);simulate_echo=1740;
  for(i=0;i<5;i++){assert(!cs100a_read(SENSOR_DISTANCE,&v));}assert(v.value==30&&v.quality==SENSOR_GOOD);
  simulate_echo=0;before=now_ms;assert(cs100a_read(SENSOR_DISTANCE,&v)==-1);assert(now_ms-before<=31);assert(cs100a_debug()->last_error==ULTRA_ERR_NO_RISE);
- gpio_a.IDR|=ULTRA_ECHO_PIN;assert(cs100a_read(SENSOR_DISTANCE,&v)==-1);
+ gpio_b.IDR|=GPIO_PIN_3;assert(cs100a_read(SENSOR_DISTANCE,&v)==-1);
  assert(cs100a_debug()->last_error==ULTRA_ERR_IDLE_HIGH);
- gpio_a.IDR&=~ULTRA_ECHO_PIN;
+ gpio_b.IDR&=~GPIO_PIN_3;
  trigger_fail=1;assert(cs100a_read(SENSOR_DISTANCE,&v)==-1);assert(cs100a_debug()->last_error==ULTRA_ERR_TRIGGER);trigger_fail=0;
  simulate_echo=100;assert(cs100a_read(SENSOR_DISTANCE,&v)==-1);assert(cs100a_debug()->last_error==ULTRA_ERR_WIDTH);
  simulate_echo=30000;assert(cs100a_read(SENSOR_DISTANCE,&v)==-1);assert(cs100a_debug()->last_error==ULTRA_ERR_LATE);
  simulate_echo=1740;echo_stuck=1;assert(cs100a_read(SENSOR_DISTANCE,&v)==-1);assert(cs100a_debug()->last_error==ULTRA_ERR_NO_FALL);
- echo_stuck=0;gpio_a.IDR&=~ULTRA_ECHO_PIN;
+ echo_stuck=0;gpio_b.IDR&=~GPIO_PIN_3;
  puts("PASS diagnostics: DHT start/no-response/bit/response/checksum/gap and ultrasonic idle/trigger/no-rise/no-fall/late/width");
- phase=1;now_us=0xfffffff0u;gpio_a.IDR|=ULTRA_ECHO_PIN;cs100a_edge_irq();now_us+=1740;
- gpio_a.IDR&=~ULTRA_ECHO_PIN;cs100a_edge_irq();assert(phase==3&&width==1740);
+ phase=1;now_us=0xfffffff0u;gpio_b.IDR|=GPIO_PIN_3;cs100a_edge_irq();now_us+=1740;
+ gpio_b.IDR&=~GPIO_PIN_3;cs100a_edge_irq();assert(phase==3&&width==1740);
  puts("PASS actual DHT/ultrasonic: valid frame, checksum, malformed pulse, interrupt capture, unplug timeout, median30cm, uint32 wrap");return 0;
 }
 ''')

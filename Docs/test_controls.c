@@ -22,7 +22,7 @@ void ec11_irq(void) {}
 void dht11_edge_irq(void) {}
 void cs100a_edge_irq(void) {}
 #define DHT11_PIN 4096u
-#define ULTRA_ECHO_PIN 32768u
+#define ULTRA_ECHO_PIN 8u
 #define EC11_A_PIN 16u
 #define EC11_B_PIN 32u
 int bsp_is_faulted(void) { return fault; }

@@ -1,5 +1,7 @@
 # sms-hub
 
+**最新超声波接线修订（2026-10-07已确认）：TRIG=PA15、ECHO=PB3/EXTI3**，模块原接口直插。旧PB3触发/PA15回波描述错误且已修正；烧录前断电拔下模块，烧录完成后断电插回，避免旧固件输出争用。详情见`Docs/M3-ultrasonic-root-cause.md`。
+
 M3软件已集成：六实例sensor_ops注册表、DHT11/超声/Rd-03/MQ门控/MCU ADC、滤波与互斥DataHub，主页显示真实值和质量。`Docs/build.ps1`现默认构建M3；操作和串口格式见`Docs/M3-acceptance.md`。MQ DO必须断开，正式构建仍禁用，不把5V电平问题当成软件可修复。v0.4待实物验收，M2以下说明保留为历史。
 
 M3硬件修订：用户已确认雷达采用安信可Rd-03，3V3/GND供电、OT2接PB4，高有效；取代旧AT6010/M7描述。OT1/RX仅用于独立配置，USART3继续供ESP8266使用。

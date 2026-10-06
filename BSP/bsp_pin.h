@@ -51,6 +51,7 @@ extern "C" {
 #define BSP_NVIC_GROUP             NVIC_PRIORITYGROUP_4
 #define BSP_IRQ_TIM4_PRIO          4u
 #define BSP_IRQ_EXTI0_PRIO         5u
+#define BSP_IRQ_EXTI3_PRIO         5u
 #define BSP_IRQ_EXTI4_PRIO         5u
 #define BSP_IRQ_EXTI15_10_PRIO      5u
 #define BSP_IRQ_USART3_PRIO        6u
@@ -101,11 +102,14 @@ extern "C" {
 #define BUZZER_ON_LEVEL            GPIO_PIN_SET
 #define BUZZER_OFF_LEVEL           GPIO_PIN_RESET
 
-/* CS100A. Echo must be dispatched first in EXTI15_10_IRQHandler. */
-#define ULTRA_TRIG_PORT            GPIOB
-#define ULTRA_TRIG_PIN             GPIO_PIN_3
-#define ULTRA_ECHO_PORT            GPIOA
-#define ULTRA_ECHO_PIN             GPIO_PIN_15
+/* CS100A direct socket: GND/PB3(ECHO)/PA15(TRIG)/3V3.
+ * Corrected against vendor schematic/HAL example with user approval 2026-10-07.
+ * PB3 is input-only on EXTI3; TIM2 stays dedicated to RGB.
+ */
+#define ULTRA_TRIG_PORT            GPIOA
+#define ULTRA_TRIG_PIN             GPIO_PIN_15
+#define ULTRA_ECHO_PORT            GPIOB
+#define ULTRA_ECHO_PIN             GPIO_PIN_3
 #define ULTRA_TRIG_PULSE_US        12u
 #define ULTRA_ECHO_TIMEOUT_US      30000u
 #define ULTRA_FILTER_N             5u
