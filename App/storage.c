@@ -46,12 +46,23 @@ int storage_setup(void)
 }
 void storage_start(void)
 {
-    if(w25q_init()){LOGE("Flash JEDEC=0x%06lX 期望=0x%06lX，存储禁用",(unsigned long)w25q_id(),(unsigned long)W25Q_JEDEC_ID);offline();return;}
+    LOGI("存储初始化：开始SPI/JEDEC");
+    if(w25q_init()){LOGE("Flash JEDEC阶段失败：读到=0x%06lX 期望=0x%06lX",(unsigned long)w25q_id(),(unsigned long)W25Q_JEDEC_ID);offline();return;}
     LOGI("Flash JEDEC=0x%06lX SPI=9MHz",(unsigned long)w25q_id());
-    if(kv_load(&current_config)<0 || eventlog_init()){offline();return;}
-    if(datahub_set_gas_limits(current_config.smoke_ms,current_config.air_ms)){offline();return;}
+    {
+        int result=kv_load(&current_config);
+        LOGI("存储初始化：KV扫描结果=%d 序号=%lu",(long)result,(unsigned long)current_config.seq);
+        if(result<0){LOGE("KV扫描/默认配置写入失败");offline();return;}
+    }
+    {
+        int result=eventlog_init();
+        LOGI("存储初始化：事件日志扫描结果=%d 下一序号=%lu",(long)result,(unsigned long)eventlog_next_seq());
+        if(result){LOGE("事件日志扫描失败");offline();return;}
+    }
+    if(datahub_set_gas_limits(current_config.smoke_ms,current_config.air_ms)){LOGE("存储初始化：阈值热加载失败");offline();return;}
     publish_fields();
-    if(log_append(rtc_get(),EVENT_BOOT,0,0)||refresh_recent()){offline();return;}
+    if(log_append(rtc_get(),EVENT_BOOT,0,0)){LOGE("存储初始化：启动事件写入失败");offline();return;}
+    if(refresh_recent()){LOGE("存储初始化：最近事件读取失败");offline();return;}
     take_view();state.ready=1;xSemaphoreGive(view_lock);
     LOGI("存储就绪 KV序号=%lu 最近事件=%u 擦除=%lu",(unsigned long)current_config.seq,recent_count,(unsigned long)w25q_erases());
 }
