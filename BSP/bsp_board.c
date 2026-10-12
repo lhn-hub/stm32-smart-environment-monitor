@@ -21,6 +21,9 @@ void bsp_safe_state(void)
     HAL_GPIO_WritePin(TB_BIN2_PORT,TB_BIN2_PIN,TB_SAFE_LEVEL);
     HAL_GPIO_WritePin(BUZZER_GPIO_PORT,BUZZER_PIN,BUZZER_OFF_LEVEL);
     TIM3->CCR4=FAN_SAFE_CCR;
+    SPI1->CR1 &= ~SPI_CR1_SPE;
+    TIM1->CCR1=SERVO_CCR_MIN;
+    TIM1->BDTR &= ~SERVO_MOE_MASK;
     HAL_GPIO_WritePin(RGB_R_PORT,RGB_R_PIN|RGB_G_PIN|RGB_B_PIN,RGB_OFF_LEVEL);
     TIM2->CCR2=0; TIM2->CCR3=0; TIM2->CCR4=0;
 }
@@ -40,6 +43,9 @@ void bsp_board_init(void)
     gpio.Pin=TB_AIN1_PIN|TB_BIN1_PIN; gpio.Mode=GPIO_MODE_OUTPUT_PP;
     gpio.Speed=GPIO_SPEED_FREQ_LOW; HAL_GPIO_Init(TB_AIN1_PORT,&gpio);
     bsp_safe_state();
+    HAL_GPIO_WritePin(SERVO_PORT,SERVO_PIN,GPIO_PIN_RESET);
+    gpio.Pin=SERVO_PIN;gpio.Mode=GPIO_MODE_OUTPUT_PP;gpio.Pull=GPIO_NOPULL;
+    gpio.Speed=GPIO_SPEED_FREQ_LOW;HAL_GPIO_Init(SERVO_PORT,&gpio);
     /* Active-low LEDs: high GPIO is off before PWM takes ownership. */
     HAL_GPIO_WritePin(RGB_R_PORT, RGB_R_PIN | RGB_G_PIN | RGB_B_PIN,
                       RGB_OFF_LEVEL);

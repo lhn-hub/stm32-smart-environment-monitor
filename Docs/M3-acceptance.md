@@ -1,6 +1,8 @@
 # M3传感器驱动与DataHub交付
 
-最新超声波修订已获用户确认：PA15=TRIG、PB3=ECHO（EXTI3优先级5），不再使用PA15回波输入。请按M3-ultrasonic-root-cause.md的最新烧录/复测步骤执行。最新全量Flash45484B/RAM16960B；后文最初构建数字为历史基线。
+2026-10-11最新DHT修订：初始化预配置EXTI12、接收使能后显式释放PB12开漏，增加失败电平/IRQ诊断；复测见M3-dht11-fix.md。当前普通固件合入此前M4/Flash修复，Flash54164B/RAM19488B，0错误0警告，实板DHT成功率仍待验证。
+
+超声波修订已获用户确认：PA15=TRIG、PB3=ECHO（EXTI3优先级5），不再使用PA15回波输入。请按M3-ultrasonic-root-cause.md的烧录/复测步骤执行。该次历史构建Flash45484B/RAM16960B；后文最初构建数字为历史基线。
 
 构建日期：2026-10-06。最终Code=40040、RO=3912、RW=112、ZI=16704；Flash44064B、RAM16816B，相比v0.3的39464B/15832B分别增加4600B/984B。距60KB Flash上限剩17376B，距20KB RAM剩3664B；11KB RTOS堆已包含在RAM中，任务栈不重复相加。
 

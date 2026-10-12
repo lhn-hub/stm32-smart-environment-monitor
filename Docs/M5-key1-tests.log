@@ -1,0 +1,14 @@
+PASS EC11 actual decoder: +20/-20, no reverse, bounced edges, invalid two-bit transitions
+PASS OLED console contention: deferred frame retains online/dirty state; lock released on success and failure
+PASS OLED actual driver: 1KB buffer, dirty page/no-op refresh, clipping, unplug/retry/recover/reset consecutive failures
+PASS Manual Test visible navigation: all 15 items forward/back/wrap, font preview long/click/back, edit decrement/clamp, exit safe
+PASS actual menu: every page reachable/back, depth3, edit/accelerate/clamp, manual beep/RGB, all pages rendered
+PASS actual console exclusion: existing mutex, bounded wait, IRQ/critical/startup rejection, release
+PASS actual SG90/fan: endpoints/MOE, 50ms/degree/no catchup, 1s ramps/re-target/stop, contention cancellation, tick wrap, fault/ISR
+PASS actual controls: safe startup, six effects/timing/wrap/cancel/fault, debounce/click/1500ms long/no release click, queued beep
+BENCH MODEL mode=1 pass=100 errors=0 jedec_errors=0 spi_waits=100 fan_waits=0
+BENCH MODEL mode=2 pass=100 errors=0 jedec_errors=0 spi_waits=0 fan_waits=400
+BENCH MODEL mode=1 pass=0 errors=1 jedec_errors=1 spi_waits=1 fan_waits=0
+BENCH MODEL mode=1 pass=0 errors=1 jedec_errors=0 spi_waits=0 fan_waits=0
+PASS actual M5 bench/fan cooperative model: two100-cycle commands, required contention/event-seq/new JEDEC, fail-stop and abort
+PASS actual BSP emergency: latched fault, SPI disabled, STBY/direction/fan/RGB/buzzer safe, TIM1 MOE disabled

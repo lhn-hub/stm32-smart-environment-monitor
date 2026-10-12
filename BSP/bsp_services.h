@@ -30,6 +30,9 @@ typedef struct { uint16_t on_ms, off_ms; uint8_t repeat; } beep_pattern_t;
 int beep_pattern(const beep_pattern_t *pattern);
 /** @brief Request one nonblocking beep. */
 int beep_ms(uint16_t ms);
+typedef enum {EFFECT_STANDBY,EFFECT_FIRE,EFFECT_INTRUSION,EFFECT_AIR,EFFECT_FAULT,EFFECT_NETWORK,EFFECT_COUNT} effect_t;
+/** @brief Nonblocking light/buzzer primitive, owns outputs until replaced. */
+int effect_set(effect_t effect);
 typedef enum { KEY_WAKEUP, KEY_BACK, KEY_CONFIRM } key_source_t;
 typedef enum { KEY_CLICK, KEY_LONG } key_action_t;
 typedef struct { key_source_t source; key_action_t action; uint32_t tick; } key_event_t;

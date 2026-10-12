@@ -11,6 +11,8 @@ static volatile uint8_t active,seen_low,level,error;
 static sensor_filter_t temperature_filter,humidity_filter;
 static dht11_debug_t debug_info;
 static volatile uint32_t edge_gap;
+static volatile uint32_t capture_irqs;
+static uint8_t low_level,released_level,end_level;
 static dht11_error_t decode_error;
 static unsigned decode_index,decode_width;
 
@@ -23,6 +25,8 @@ static int read_bad(dht11_error_t why,uint32_t start_ms,uint32_t capture_us)
     debug_info.captured_widths=captured;
     debug_info.bad_index=why==DHT_ERR_EDGE_GAP?captured:decode_index;
     debug_info.bad_width_us=why==DHT_ERR_EDGE_GAP?edge_gap:decode_width;
+    debug_info.irqs=capture_irqs;debug_info.low_level=low_level;
+    debug_info.released_level=released_level;debug_info.end_level=end_level;
     temperature_filter.count=humidity_filter.count=0;
     temperature_filter.next=humidity_filter.next=0;
     return -1;
@@ -59,11 +63,16 @@ static void input_mode(void)
     HAL_GPIO_Init(DHT11_PORT,&g);
 }
 int dht11_init(sensor_id_t id)
-{(void)id;active=0;temperature_filter.count=humidity_filter.count=0;temperature_filter.next=humidity_filter.next=0;input_mode();return 0;}
+{
+    GPIO_InitTypeDef g={0};g.Pin=DHT11_PIN;g.Mode=GPIO_MODE_IT_RISING_FALLING;g.Pull=GPIO_PULLUP;
+    (void)id;active=0;temperature_filter.count=humidity_filter.count=0;temperature_filter.next=humidity_filter.next=0;
+    HAL_GPIO_Init(DHT11_PORT,&g);input_mode();return 0;
+}
 void dht11_edge_irq(void)
 {
     uint8_t next;uint32_t now,dt;
     if(!active)return;
+    ++capture_irqs;
     next=(DHT11_PORT->IDR&DHT11_PIN)?1u:0u;now=bsp_micros();
     if(!seen_low){if(!next){seen_low=1;level=0;last_edge=now;}return;}
     if(next==level)return;
@@ -80,22 +89,28 @@ int dht11_read(sensor_id_t id,sensor_value_t *out)
     /* PB12 replaces unused EC11 EXTI12. Never mask full3~5ms response:
      * TIM4 priority4 remains active; short setup critical section only.
      * No delay/print/flash in critical section or ISR. */
-    active=0;captured=0;decode_index=decode_width=0;
+    active=0;captured=0;capture_irqs=0;decode_index=decode_width=0;
+    low_level=released_level=end_level=2u;
     HAL_GPIO_WritePin(DHT11_PORT,DHT11_PIN,GPIO_PIN_RESET);
     g.Pin=DHT11_PIN;g.Mode=GPIO_MODE_OUTPUT_OD;g.Speed=GPIO_SPEED_FREQ_LOW;g.Pull=GPIO_PULLUP;
     HAL_GPIO_Init(DHT11_PORT,&g);start=HAL_GetTick();
     vTaskDelay(pdMS_TO_TICKS(DHT11_START_LOW_MS)+1u);
     start_ms=HAL_GetTick()-start;
+    low_level=(uint8_t)HAL_GPIO_ReadPin(DHT11_PORT,DHT11_PIN);
     if(start_ms>DHT11_START_MAX_MS){input_mode();return read_bad(DHT_ERR_START_LONG,start_ms,0);}
     taskENTER_CRITICAL();
     captured=0;edge_gap=0;error=seen_low=0;active=1;
-    g.Mode=GPIO_MODE_IT_RISING_FALLING;HAL_GPIO_Init(DHT11_PORT,&g);
+    /* Arm EXTI before releasing open-drain: the response can begin in 10us. */
     __HAL_GPIO_EXTI_CLEAR_IT(DHT11_PIN);
-    taskEXIT_CRITICAL();
+    EXTI->IMR|=DHT11_PIN;
     start=bsp_micros();
+    HAL_GPIO_WritePin(DHT11_PORT,DHT11_PIN,GPIO_PIN_SET);
+    released_level=(uint8_t)HAL_GPIO_ReadPin(DHT11_PORT,DHT11_PIN);
+    taskEXIT_CRITICAL();
     while(active && (uint32_t)(bsp_micros()-start)<DHT11_CAPTURE_TIMEOUT_US)vTaskDelay(1);
     taskENTER_CRITICAL();active=0;taskEXIT_CRITICAL();
     capture_us=bsp_micros()-start;
+    end_level=(uint8_t)HAL_GPIO_ReadPin(DHT11_PORT,DHT11_PIN);
     input_mode();
     if(error)return read_bad(DHT_ERR_EDGE_GAP,start_ms,capture_us);
     if(!seen_low)return read_bad(DHT_ERR_NO_RESPONSE,start_ms,capture_us);

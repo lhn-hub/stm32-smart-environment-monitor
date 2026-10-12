@@ -3,6 +3,8 @@
 #include "tim.h"
 #include "dht11.h"
 #include "cs100a.h"
+#include "sg90.h"
+#include "tb6612_fan.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
@@ -14,22 +16,26 @@ static QueueHandle_t edges;
 typedef struct { uint8_t raw, stable, long_sent; uint32_t changed, pressed; } key_state_t;
 static key_state_t state[3];
 static beep_pattern_t tone;
-static uint32_t tone_deadline, selftest_started;
-static uint8_t tone_on, rgb_phase;
+static uint32_t tone_deadline,effect_started;
+static uint8_t tone_on;
+static effect_t effect;
 static uint32_t dropped;
 
 int rgb_set(uint16_t r, uint16_t g, uint16_t b)
 {
-    if (bsp_is_faulted() || r >= RGB_PERIOD || g >= RGB_PERIOD || b >= RGB_PERIOD) return -1;
+    if (__get_IPSR() || r >= RGB_PERIOD || g >= RGB_PERIOD || b >= RGB_PERIOD) return -1;
+    taskENTER_CRITICAL();
+    if(bsp_is_faulted()){taskEXIT_CRITICAL();return -1;}
     __HAL_TIM_SET_COMPARE(&htim2, RGB_R_CH, r);
     __HAL_TIM_SET_COMPARE(&htim2, RGB_G_CH, g);
     __HAL_TIM_SET_COMPARE(&htim2, RGB_B_CH, b);
+    taskEXIT_CRITICAL();
     return 0;
 }
 
 int beep_pattern(const beep_pattern_t *pattern)
 {
-    if (bsp_is_faulted() || !pattern || !pattern->repeat || !pattern->on_ms ||
+    if (__get_IPSR() || !beeps || bsp_is_faulted() || !pattern || !pattern->repeat || !pattern->on_ms ||
         pattern->on_ms > APP_BEEP_MAX_MS || pattern->off_ms > APP_BEEP_MAX_MS)
         return -1;
     return xQueueSend(beeps, pattern, 0) == pdTRUE ? 0 : -1;
@@ -38,6 +44,32 @@ int beep_ms(uint16_t ms)
 {
     beep_pattern_t p = {ms, 0, 1};
     return beep_pattern(&p);
+}
+int effect_set(effect_t value)
+{
+    if((unsigned)value>=EFFECT_COUNT || __get_IPSR() || !beeps)return -1;
+    taskENTER_CRITICAL();
+    if(bsp_is_faulted()){taskEXIT_CRITICAL();return -1;}
+    effect=value;effect_started=HAL_GetTick();tone.repeat=0;tone_on=0;
+    xQueueReset(beeps);
+    HAL_GPIO_WritePin(BUZZER_GPIO_PORT,BUZZER_PIN,BUZZER_OFF_LEVEL);
+    rgb_set(0,0,0);
+    taskEXIT_CRITICAL();return 0;
+}
+static void effects_tick(uint32_t now)
+{
+    uint32_t phase=now-effect_started;
+    uint16_t r=0,g=0,b=0;unsigned on=0;
+    switch(effect){
+    case EFFECT_FIRE:r=phase%500u<250u?RGB_ARR:0;on=phase%200u<100u;break;
+    case EFFECT_INTRUSION:r=b=phase%1000u<500u?RGB_ARR:0;on=phase%2000u<1500u;break;
+    case EFFECT_AIR:r=g=RGB_ARR;break;
+    case EFFECT_FAULT:r=g=phase%1000u<500u?RGB_ARR:0;break;
+    case EFFECT_NETWORK:phase%=2000u;g=(uint16_t)((phase<=1000u?phase:2000u-phase)*RGB_ARR/1000u);break;
+    default:return;
+    }
+    rgb_set(r,g,b);
+    HAL_GPIO_WritePin(BUZZER_GPIO_PORT,BUZZER_PIN,on?BUZZER_ON_LEVEL:BUZZER_OFF_LEVEL);
 }
 int bsp_key_get(key_event_t *event)
 {
@@ -89,13 +121,10 @@ static void controls_tick(TimerHandle_t handle)
             s->long_sent=1; emit(i, KEY_LONG, now);
         }
     }
-    if (rgb_phase < 4u) {
-        uint8_t phase = (uint8_t)((now-selftest_started)/APP_RGB_STEP_MS);
-        if (phase != rgb_phase) {
-            rgb_phase = phase > 3u ? 4u : phase;
-            rgb_set(rgb_phase==0 ? RGB_ARR:0, rgb_phase==1 ? RGB_ARR:0, rgb_phase==2 ? RGB_ARR:0);
-        }
-    }
+    servo_poll(now);
+    taskENTER_CRITICAL();
+    if(bsp_is_faulted()){taskEXIT_CRITICAL();bsp_safe_state();return;}
+    if(effect!=EFFECT_STANDBY){effects_tick(now);taskEXIT_CRITICAL();return;}
     if (!tone.repeat && xQueueReceive(beeps,&tone,0)==pdTRUE) {
         tone_on=1; tone_deadline=now+tone.on_ms;
         HAL_GPIO_WritePin(BUZZER_GPIO_PORT,BUZZER_PIN,BUZZER_ON_LEVEL);
@@ -109,6 +138,7 @@ static void controls_tick(TimerHandle_t handle)
             HAL_GPIO_WritePin(BUZZER_GPIO_PORT,BUZZER_PIN,BUZZER_ON_LEVEL);
         }
     }
+    taskEXIT_CRITICAL();
 }
 
 int bsp_controls_init(void)
@@ -122,7 +152,7 @@ int bsp_controls_init(void)
     if (HAL_TIM_PWM_Start(&htim2,RGB_R_CH)!=HAL_OK ||
         HAL_TIM_PWM_Start(&htim2,RGB_G_CH)!=HAL_OK ||
         HAL_TIM_PWM_Start(&htim2,RGB_B_CH)!=HAL_OK) return -1;
-    selftest_started=HAL_GetTick(); rgb_phase=0;
-    rgb_set(RGB_ARR,0,0);
+    if(servo_init() || fan_init())return -1;
+    effect_set(EFFECT_STANDBY);
     return xTimerStart(timer,0)==pdPASS ? 0:-1;
 }

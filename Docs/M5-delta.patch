@@ -1,0 +1,2154 @@
+diff --git a/App/app_config.h b/App/app_config.h
+index 3aeb4e0..a09fc72 100644
+--- a/App/app_config.h
++++ b/App/app_config.h
+@@ -1,7 +1,7 @@
+ #ifndef APP_CONFIG_H
+ #define APP_CONFIG_H
+ #include "bsp_pin.h"
+-#define APP_FW_VERSION "0.5.0-dev"
++#define APP_FW_VERSION "0.6.0-dev"
+ #define APP_WIFI_SSID ""
+ #define APP_WIFI_PASSWORD ""
+ #define APP_MQTT_HOST "broker.emqx.io"
+@@ -141,4 +141,9 @@
+ #define APP_STORAGE_STRESS_ENABLED 0
+ #define APP_STORAGE_STRESS_WRITES 500u
+ #define APP_STORAGE_EVENT_STRESS 2304u
++#define APP_ACTUATOR_POLL_MS 10u
++#ifndef APP_M5_STRESS_ENABLED
++#define APP_M5_STRESS_ENABLED 0
++#endif
++#define APP_M5_STRESS_CYCLES 100u
+ #endif
+diff --git a/App/menu/menu.c b/App/menu/menu.c
+index 2a248a4..f716a0d 100644
+--- a/App/menu/menu.c
++++ b/App/menu/menu.c
+@@ -4,6 +4,8 @@
+ #include "app_config.h"
+ #include "datahub.h"
+ #include "storage.h"
++#include "sg90.h"
++#include "tb6612_fan.h"
+ #include "FreeRTOS.h"
+ #include "task.h"
+ #include <stdio.h>
+@@ -81,14 +83,34 @@ static void render_thresholds(void)
+     for(i=0;i<4;i++){snprintf(text,sizeof(text),"%s:%d",threshold_labels[i],values[i]);row(i,text,i==selected[THRESHOLDS]);}
+     if(editing){unsigned s=selected[THRESHOLDS];ui_progress(0,52,128,9,values[s],maxima[s]);}
+ }
+-static const char *manual_labels[]={"Beep","RGB Red","RGB Green","RGB Blue","RGB Off","I2C Scan","Servo (M5)","Fan (M5)","Font test"};
++static const char *manual_labels[]={"Fan %","Servo deg","Distance","Fire","Intrusion","Air","Fault","Network","Standby","Beep","RGB Red","RGB Green","RGB Blue","I2C Scan","Font test"};
++static int manual_fan,manual_servo;
+ static unsigned font_test;
++#define MANUAL_COUNT (sizeof(manual_labels)/sizeof(manual_labels[0]))
++static void manual_exit(void)
++{fan_set(0);servo_write(0);effect_set(EFFECT_STANDBY);manual_fan=manual_servo=0;font_test=0;}
+ static void render_manual(void)
+ {
+     if(font_test){unsigned i;header("FONTS");oled_text(0,12,"ASCII 6x8",0);oled_text(0,22,"8x16",1);
+         for(i=0;i<7;i++) { oled_hanzi((int)i*16,44,i); }
+         return;}
+-    render_list("MANUAL TEST",manual_labels,9);
++    if(selected[MANUAL]<=2u){
++        unsigned s=selected[MANUAL];header(manual_labels[s]);
++        if(s<2u){
++            unsigned actual=s==0?fan_percent():servo_angle();
++            int value=s==0?manual_fan:manual_servo;
++            snprintf(text,sizeof(text),"Set:%d Out:%u",value,actual);oled_text(0,18,text,0);
++            ui_progress(0,32,128,10,value,s==0?100:180);
++            oled_text(0,52,editing?"ADJUST":"READY",0);
++        }else if(!datahub_snapshot(&sensors)){
++            const sensor_value_t *d=&sensors.sensors[SENSOR_DISTANCE];
++            if(d->quality==SENSOR_FAULT)snprintf(text,sizeof(text),"FAULT");
++            else snprintf(text,sizeof(text),"%ld cm%s",(long)d->value,d->quality==SENSOR_STALE?" STALE":"");
++            oled_text(0,24,text,1);
++        }
++        return;
++    }
++    render_list("MANUAL TEST",manual_labels,MANUAL_COUNT);
+ }
+ static void render_network(void) {header("NETWORK");oled_text(0,18,"WiFi: offline",0);oled_text(0,30,"MQTT: offline",0);oled_text(0,44,"M6 placeholder",0);}
+ static void render_log(void)
+@@ -129,16 +151,18 @@ static void select_key(int key)
+         else if(store_state.ready && !store_state.pending)editing=1;
+     }
+     else if(id==MANUAL){
+-        if(s<=4 && storage_event(EVENT_MANUAL,(int32_t)s,0))LOGW("手动测试事件未入队");
+-        switch(s){case 0:beep_ms(APP_MENU_BEEP_MS);break;case 1:rgb_set(RGB_ARR,0,0);break;
+-        case 2:rgb_set(0,RGB_ARR,0);break;case 3:rgb_set(0,0,RGB_ARR);break;case 4:rgb_set(0,0,0);break;
+-        case 5:i2c_scan();break;case 8:font_test=!font_test;break;default:break;}
++        if(s<2u){editing=!editing;return;}
++        if(s>=3u && s<=12u && storage_event(EVENT_MANUAL,(int32_t)s,0))LOGW("手动测试事件未入队");
++        if(s>=3u && s<=8u)effect_set(s==8u?EFFECT_STANDBY:(effect_t)(s-2u));
++        else switch(s){case 9:effect_set(EFFECT_STANDBY);beep_ms(APP_MENU_BEEP_MS);break;
++        case 10:case 11:case 12:effect_set(EFFECT_STANDBY);rgb_set(s==10?RGB_ARR:0,s==11?RGB_ARR:0,s==12?RGB_ARR:0);break;
++        case 13:i2c_scan();break;case 14:font_test=!font_test;break;default:break;}
+     }
+ }
+ static const page_t pages[PAGE_COUNT]={
+  {no_op,no_op,render_home,select_key},{no_op,no_op,render_root,select_key},
+  {no_op,no_op,render_arm,select_key},{no_op,no_op,render_thresholds,select_key},
+- {no_op,no_op,render_manual,select_key},{no_op,no_op,render_network,select_key},
++ {no_op,manual_exit,render_manual,select_key},{no_op,no_op,render_network,select_key},
+  {no_op,no_op,render_log,select_key},{no_op,no_op,render_system,select_key},{no_op,no_op,render_about,select_key}};
+ void menu_init(void){depth=0;stack[0]=HOME;(void)oled_init();deadline=HAL_GetTick();last_report=deadline;frames=0;}
+ static void navigate(int steps)
+@@ -148,7 +172,13 @@ static void navigate(int steps)
+     if(steps){
+         if(id==THRESHOLDS && editing){unsigned s=selected[id];int gain=(int32_t)(accelerate_until-now)>0?APP_EDIT_ACCEL:1;
+             values[s]+=steps*gain;if(values[s]<0)values[s]=0;if(values[s]>maxima[s])values[s]=maxima[s];}
+-        else {int count=id==ROOT?8:id==THRESHOLDS?4:id==MANUAL?9:id==EVENTLOG?(history_count?(int)history_count:1):1;int n=(int)selected[id]+steps;
++        else if(id==MANUAL && editing && selected[id]<2u){
++            int *value=selected[id]==0?&manual_fan:&manual_servo;
++            int max=selected[id]==0?100:180;
++            *value+=steps;if(*value<0)*value=0;if(*value>max)*value=max;
++            if(selected[id]==0)fan_set((unsigned)*value);else servo_write((unsigned)*value);
++        }
++        else {int count=id==ROOT?8:id==THRESHOLDS?4:id==MANUAL?(int)MANUAL_COUNT:id==EVENTLOG?(history_count?(int)history_count:1):1;int n=(int)selected[id]+steps;
+             if(n<0)n=count-1;
+             if(n>=count)n=0;
+             selected[id]=(unsigned)n;}
+diff --git a/App/storage.c b/App/storage.c
+index 86398a5..7534bee 100644
+--- a/App/storage.c
++++ b/App/storage.c
+@@ -3,6 +3,7 @@
+ #include "bus_arbiter.h"
+ #include "bsp_services.h"
+ #include "datahub.h"
++#include "m5_bench.h"
+ #include "FreeRTOS.h"
+ #include "queue.h"
+ #include "semphr.h"
+@@ -101,6 +102,11 @@ void storage_poll(void)
+     request_t r;int ready;
+     take_view();ready=state.ready;xSemaphoreGive(view_lock);
+     if(!ready)return;
++    /* No idle pin churn; a queued request remains queued until the bus is ours. */
++#if !APP_STORAGE_STRESS_ENABLED
++    if(!uxQueueMessagesWaiting(requests))return;
++#endif
++    if(spi_bus_take(APP_SPI_LOCK_MS))return;
+ #if APP_STORAGE_STRESS_ENABLED
+     if(!bench_left && (storage_bench_request==1 || storage_bench_request==2)){
+         bench_mode=storage_bench_request;storage_bench_request=0;
+@@ -110,24 +116,29 @@ void storage_poll(void)
+     if(bench_left){
+         if(bench_mode==1){
+             current_config.temp_x10=bench_left==1?bench_saved_temp:(int32_t)(bench_left%APP_EDIT_MAX_TEMP)*10;
+-            if(kv_save(&current_config)){offline();bench_left=0;return;}
++            if(kv_save(&current_config)){offline();bench_left=0;goto done;}
+             publish_fields();
+-        }else if(log_append(rtc_get(),EVENT_MANUAL,(int32_t)bench_left,0)){offline();bench_left=0;return;}
++        }else if(log_append(rtc_get(),EVENT_MANUAL,(int32_t)bench_left,0)){offline();bench_left=0;goto done;}
+         if(--bench_left==0){if(refresh_recent())offline();LOGI("存储压力测试结束 模式=%lu",(unsigned long)bench_mode);}
+-        return;
++        goto done;
+     }
+ #endif
+-    if(xQueueReceive(requests,&r,0)!=pdTRUE)return;
++    if(xQueueReceive(requests,&r,0)!=pdTRUE)goto done;
++#if APP_M5_STRESS_ENABLED
++    if(r.kind==EVENT_BUS_TEST)m5_bench_storage_hook((unsigned)r.second);
++#endif
+     if(!r.kind){
+         switch(r.first){case CFG_TEMP:current_config.temp_x10=r.second*10;break;case CFG_DISTANCE:current_config.distance_cm=(uint32_t)r.second;break;
+         case CFG_SMOKE:current_config.smoke_ms=(uint32_t)r.second;break;case CFG_AIR:current_config.air_ms=(uint32_t)r.second;break;
+-        case CFG_MODE:current_config.mode=(uint32_t)r.second;break;default:offline();return;}
+-        if(kv_save(&current_config)){offline();return;}
+-        if(datahub_set_gas_limits(current_config.smoke_ms,current_config.air_ms)){offline();return;}
++        case CFG_MODE:current_config.mode=(uint32_t)r.second;break;default:offline();goto done;}
++        if(kv_save(&current_config)){offline();goto done;}
++        if(datahub_set_gas_limits(current_config.smoke_ms,current_config.air_ms)){offline();goto done;}
+         publish_fields();
+         LOGI("配置已保存 序号=%lu 字段=%ld 值=%ld",(unsigned long)current_config.seq,(long)r.first,(long)r.second);
+         take_view();state.pending=0;xSemaphoreGive(view_lock);
+         r.kind=EVENT_CONFIG;
+     }
+-    if(log_append(r.time,r.kind,r.first,r.second)||refresh_recent()){offline();return;}
++    if(log_append(r.time,r.kind,r.first,r.second)||refresh_recent())offline();
++done:
++    spi_bus_give();
+ }
+diff --git a/App/storage.h b/App/storage.h
+index b20d359..0b343f8 100644
+--- a/App/storage.h
++++ b/App/storage.h
+@@ -3,7 +3,7 @@
+ #include "eventlog.h"
+ #include "kvstore.h"
+ enum { CFG_TEMP,CFG_DISTANCE,CFG_SMOKE,CFG_AIR,CFG_MODE,CFG_FIELD_COUNT };
+-enum { EVENT_BOOT=1,EVENT_CONFIG=2,EVENT_MANUAL=3 };
++enum { EVENT_BOOT=1,EVENT_CONFIG=2,EVENT_MANUAL=3,EVENT_BUS_TEST=4 };
+ typedef struct {uint32_t ready,errors,dropped,erases,config_seq,pending; } storage_status_t;
+ /** @brief Create bounded request queue/mutex; before scheduler. */
+ int storage_setup(void);
+diff --git a/App/tasks/app_tasks.c b/App/tasks/app_tasks.c
+index 0a34eb0..7b07865 100644
+--- a/App/tasks/app_tasks.c
++++ b/App/tasks/app_tasks.c
+@@ -8,6 +8,8 @@
+ #include "sensor.h"
+ #include "datahub.h"
+ #include "storage.h"
++#include "tb6612_fan.h"
++#include "m5_bench.h"
+ int bsp_adc_start(void);
+ int bsp_rtc_start(void);
+ int bsp_net_start(void);
+@@ -92,6 +94,12 @@ static void worker(void *argument)
+             }
+         }
+         if(id==5)storage_poll();
++        if(id==1 && (ready&((1u<<4)|(1u<<5)))==((1u<<4)|(1u<<5))){
++            fan_poll(now);
++#if APP_M5_STRESS_ENABLED
++            m5_bench_poll();
++#endif
++        }
+         if(id==3)sensors_poll();
+         if(id==4 && ui_started) menu_poll();
+         if(now-last_status>=APP_STATUS_MS) {
+@@ -101,7 +109,7 @@ static void worker(void *argument)
+             if(id==3)sensors_log_table();
+             if(id==0) LOGI("堆剩余=%u字节 看门狗故障=%lu",(unsigned)xPortGetFreeHeapSize(),(unsigned long)watchdog_tripped);
+         }
+-        vTaskDelay(pdMS_TO_TICKS(id==2?APP_NET_POLL_MS:id==4?APP_MENU_PERIOD_MS:id==3?APP_SENSOR_POLL_MS:APP_MONITOR_PERIOD_MS));
++        vTaskDelay(pdMS_TO_TICKS(id==1?APP_ACTUATOR_POLL_MS:id==2?APP_NET_POLL_MS:id==4?APP_MENU_PERIOD_MS:id==3?APP_SENSOR_POLL_MS:APP_MONITOR_PERIOD_MS));
+     }
+ }
+ void app_start(void)
+diff --git a/BSP/bsp_board.c b/BSP/bsp_board.c
+index b1e3058..0d73964 100644
+--- a/BSP/bsp_board.c
++++ b/BSP/bsp_board.c
+@@ -21,6 +21,9 @@ void bsp_safe_state(void)
+     HAL_GPIO_WritePin(TB_BIN2_PORT,TB_BIN2_PIN,TB_SAFE_LEVEL);
+     HAL_GPIO_WritePin(BUZZER_GPIO_PORT,BUZZER_PIN,BUZZER_OFF_LEVEL);
+     TIM3->CCR4=FAN_SAFE_CCR;
++    SPI1->CR1 &= ~SPI_CR1_SPE;
++    TIM1->CCR1=SERVO_CCR_MIN;
++    TIM1->BDTR &= ~SERVO_MOE_MASK;
+     HAL_GPIO_WritePin(RGB_R_PORT,RGB_R_PIN|RGB_G_PIN|RGB_B_PIN,RGB_OFF_LEVEL);
+     TIM2->CCR2=0; TIM2->CCR3=0; TIM2->CCR4=0;
+ }
+@@ -40,6 +43,9 @@ void bsp_board_init(void)
+     gpio.Pin=TB_AIN1_PIN|TB_BIN1_PIN; gpio.Mode=GPIO_MODE_OUTPUT_PP;
+     gpio.Speed=GPIO_SPEED_FREQ_LOW; HAL_GPIO_Init(TB_AIN1_PORT,&gpio);
+     bsp_safe_state();
++    HAL_GPIO_WritePin(SERVO_PORT,SERVO_PIN,GPIO_PIN_RESET);
++    gpio.Pin=SERVO_PIN;gpio.Mode=GPIO_MODE_OUTPUT_PP;gpio.Pull=GPIO_NOPULL;
++    gpio.Speed=GPIO_SPEED_FREQ_LOW;HAL_GPIO_Init(SERVO_PORT,&gpio);
+     /* Active-low LEDs: high GPIO is off before PWM takes ownership. */
+     HAL_GPIO_WritePin(RGB_R_PORT, RGB_R_PIN | RGB_G_PIN | RGB_B_PIN,
+                       RGB_OFF_LEVEL);
+diff --git a/BSP/bsp_controls.c b/BSP/bsp_controls.c
+index b8332c1..9bfd674 100644
+--- a/BSP/bsp_controls.c
++++ b/BSP/bsp_controls.c
+@@ -3,6 +3,8 @@
+ #include "tim.h"
+ #include "dht11.h"
+ #include "cs100a.h"
++#include "sg90.h"
++#include "tb6612_fan.h"
+ #include "FreeRTOS.h"
+ #include "task.h"
+ #include "queue.h"
+@@ -14,22 +16,26 @@ static QueueHandle_t edges;
+ typedef struct { uint8_t raw, stable, long_sent; uint32_t changed, pressed; } key_state_t;
+ static key_state_t state[3];
+ static beep_pattern_t tone;
+-static uint32_t tone_deadline, selftest_started;
+-static uint8_t tone_on, rgb_phase;
++static uint32_t tone_deadline,effect_started;
++static uint8_t tone_on;
++static effect_t effect;
+ static uint32_t dropped;
+ 
+ int rgb_set(uint16_t r, uint16_t g, uint16_t b)
+ {
+-    if (bsp_is_faulted() || r >= RGB_PERIOD || g >= RGB_PERIOD || b >= RGB_PERIOD) return -1;
++    if (__get_IPSR() || r >= RGB_PERIOD || g >= RGB_PERIOD || b >= RGB_PERIOD) return -1;
++    taskENTER_CRITICAL();
++    if(bsp_is_faulted()){taskEXIT_CRITICAL();return -1;}
+     __HAL_TIM_SET_COMPARE(&htim2, RGB_R_CH, r);
+     __HAL_TIM_SET_COMPARE(&htim2, RGB_G_CH, g);
+     __HAL_TIM_SET_COMPARE(&htim2, RGB_B_CH, b);
++    taskEXIT_CRITICAL();
+     return 0;
+ }
+ 
+ int beep_pattern(const beep_pattern_t *pattern)
+ {
+-    if (bsp_is_faulted() || !pattern || !pattern->repeat || !pattern->on_ms ||
++    if (__get_IPSR() || !beeps || bsp_is_faulted() || !pattern || !pattern->repeat || !pattern->on_ms ||
+         pattern->on_ms > APP_BEEP_MAX_MS || pattern->off_ms > APP_BEEP_MAX_MS)
+         return -1;
+     return xQueueSend(beeps, pattern, 0) == pdTRUE ? 0 : -1;
+@@ -39,6 +45,32 @@ int beep_ms(uint16_t ms)
+     beep_pattern_t p = {ms, 0, 1};
+     return beep_pattern(&p);
+ }
++int effect_set(effect_t value)
++{
++    if((unsigned)value>=EFFECT_COUNT || __get_IPSR() || !beeps)return -1;
++    taskENTER_CRITICAL();
++    if(bsp_is_faulted()){taskEXIT_CRITICAL();return -1;}
++    effect=value;effect_started=HAL_GetTick();tone.repeat=0;tone_on=0;
++    xQueueReset(beeps);
++    HAL_GPIO_WritePin(BUZZER_GPIO_PORT,BUZZER_PIN,BUZZER_OFF_LEVEL);
++    rgb_set(0,0,0);
++    taskEXIT_CRITICAL();return 0;
++}
++static void effects_tick(uint32_t now)
++{
++    uint32_t phase=now-effect_started;
++    uint16_t r=0,g=0,b=0;unsigned on=0;
++    switch(effect){
++    case EFFECT_FIRE:r=phase%500u<250u?RGB_ARR:0;on=phase%200u<100u;break;
++    case EFFECT_INTRUSION:r=b=phase%1000u<500u?RGB_ARR:0;on=phase%2000u<1500u;break;
++    case EFFECT_AIR:r=g=RGB_ARR;break;
++    case EFFECT_FAULT:r=g=phase%1000u<500u?RGB_ARR:0;break;
++    case EFFECT_NETWORK:phase%=2000u;g=(uint16_t)((phase<=1000u?phase:2000u-phase)*RGB_ARR/1000u);break;
++    default:return;
++    }
++    rgb_set(r,g,b);
++    HAL_GPIO_WritePin(BUZZER_GPIO_PORT,BUZZER_PIN,on?BUZZER_ON_LEVEL:BUZZER_OFF_LEVEL);
++}
+ int bsp_key_get(key_event_t *event)
+ {
+     return event && xQueueReceive(keys, event, 0) == pdTRUE;
+@@ -89,13 +121,10 @@ static void controls_tick(TimerHandle_t handle)
+             s->long_sent=1; emit(i, KEY_LONG, now);
+         }
+     }
+-    if (rgb_phase < 4u) {
+-        uint8_t phase = (uint8_t)((now-selftest_started)/APP_RGB_STEP_MS);
+-        if (phase != rgb_phase) {
+-            rgb_phase = phase > 3u ? 4u : phase;
+-            rgb_set(rgb_phase==0 ? RGB_ARR:0, rgb_phase==1 ? RGB_ARR:0, rgb_phase==2 ? RGB_ARR:0);
+-        }
+-    }
++    servo_poll(now);
++    taskENTER_CRITICAL();
++    if(bsp_is_faulted()){taskEXIT_CRITICAL();bsp_safe_state();return;}
++    if(effect!=EFFECT_STANDBY){effects_tick(now);taskEXIT_CRITICAL();return;}
+     if (!tone.repeat && xQueueReceive(beeps,&tone,0)==pdTRUE) {
+         tone_on=1; tone_deadline=now+tone.on_ms;
+         HAL_GPIO_WritePin(BUZZER_GPIO_PORT,BUZZER_PIN,BUZZER_ON_LEVEL);
+@@ -109,6 +138,7 @@ static void controls_tick(TimerHandle_t handle)
+             HAL_GPIO_WritePin(BUZZER_GPIO_PORT,BUZZER_PIN,BUZZER_ON_LEVEL);
+         }
+     }
++    taskEXIT_CRITICAL();
+ }
+ 
+ int bsp_controls_init(void)
+@@ -122,7 +152,7 @@ int bsp_controls_init(void)
+     if (HAL_TIM_PWM_Start(&htim2,RGB_R_CH)!=HAL_OK ||
+         HAL_TIM_PWM_Start(&htim2,RGB_G_CH)!=HAL_OK ||
+         HAL_TIM_PWM_Start(&htim2,RGB_B_CH)!=HAL_OK) return -1;
+-    selftest_started=HAL_GetTick(); rgb_phase=0;
+-    rgb_set(RGB_ARR,0,0);
++    if(servo_init() || fan_init())return -1;
++    effect_set(EFFECT_STANDBY);
+     return xTimerStart(timer,0)==pdPASS ? 0:-1;
+ }
+diff --git a/BSP/bsp_services.h b/BSP/bsp_services.h
+index b5ea107..d2b1552 100644
+--- a/BSP/bsp_services.h
++++ b/BSP/bsp_services.h
+@@ -30,6 +30,9 @@ typedef struct { uint16_t on_ms, off_ms; uint8_t repeat; } beep_pattern_t;
+ int beep_pattern(const beep_pattern_t *pattern);
+ /** @brief Request one nonblocking beep. */
+ int beep_ms(uint16_t ms);
++typedef enum {EFFECT_STANDBY,EFFECT_FIRE,EFFECT_INTRUSION,EFFECT_AIR,EFFECT_FAULT,EFFECT_NETWORK,EFFECT_COUNT} effect_t;
++/** @brief Nonblocking light/buzzer primitive, owns outputs until replaced. */
++int effect_set(effect_t effect);
+ typedef enum { KEY_WAKEUP, KEY_BACK, KEY_CONFIRM } key_source_t;
+ typedef enum { KEY_CLICK, KEY_LONG } key_action_t;
+ typedef struct { key_source_t source; key_action_t action; uint32_t tick; } key_event_t;
+diff --git a/BSP/bus_arbiter.c b/BSP/bus_arbiter.c
+index fc64d29..2aceac7 100644
+--- a/BSP/bus_arbiter.c
++++ b/BSP/bus_arbiter.c
+@@ -7,33 +7,74 @@
+ #include "semphr.h"
+ static SemaphoreHandle_t mutex;
+ static TaskHandle_t owner;
++static unsigned depth;
++static bus_status_t state;
+ int spi_bus_init(void){mutex=xSemaphoreCreateMutex();return mutex?0:-1;}
+-int spi_bus_take(uint32_t ms)
++static void spi_pins(void)
+ {
+     GPIO_InitTypeDef g={0};
+-    if(!mutex || __get_IPSR() || __get_PRIMASK() || __get_BASEPRI() || bsp_is_faulted() ||
+-       xTaskGetSchedulerState()!=taskSCHEDULER_RUNNING)return -1;
+-    if(xSemaphoreTake(mutex,pdMS_TO_TICKS(ms))!=pdTRUE)return -1;
+-    if(bsp_is_faulted()){xSemaphoreGive(mutex);return -1;}
+-    owner=xTaskGetCurrentTaskHandle();
+-    __HAL_SPI_DISABLE(&hspi1);TIM3->CCR4=FAN_SAFE_CCR;
+-    HAL_GPIO_WritePin(W25Q_CS_PORT,W25Q_CS_PIN,GPIO_PIN_RESET);
+     g.Pin=W25Q_CS_PIN;g.Mode=GPIO_MODE_OUTPUT_PP;g.Pull=GPIO_NOPULL;g.Speed=GPIO_SPEED_FREQ_LOW;
+     HAL_GPIO_Init(W25Q_CS_PORT,&g);
+     HAL_GPIO_WritePin(W25Q_SCK_PORT,W25Q_SCK_PIN|W25Q_MOSI_PIN,GPIO_PIN_RESET);
+     g.Pin=W25Q_MISO_PIN;g.Mode=GPIO_MODE_INPUT;g.Pull=GPIO_NOPULL;HAL_GPIO_Init(W25Q_MISO_PORT,&g);
+     g.Pin=W25Q_SCK_PIN|W25Q_MOSI_PIN;g.Mode=GPIO_MODE_AF_PP;g.Speed=GPIO_SPEED_FREQ_HIGH;HAL_GPIO_Init(W25Q_SCK_PORT,&g);
+-    __HAL_SPI_ENABLE(&hspi1);
+-    HAL_GPIO_WritePin(W25Q_CS_PORT,W25Q_CS_PIN,GPIO_PIN_SET);
+-    return 0;
+ }
+-void spi_bus_give(void)
++static int take(unsigned mode,uint32_t ms)
++{
++    GPIO_InitTypeDef g={0};
++    TaskHandle_t self;
++    if(!mutex || __get_IPSR() || __get_PRIMASK() || __get_BASEPRI() || bsp_is_faulted() ||
++       xTaskGetSchedulerState()!=taskSCHEDULER_RUNNING)return -1;
++    self=xTaskGetCurrentTaskHandle();
++    if(owner==self){
++        if(mode!=BUS_SPI || state.mode!=BUS_SPI || depth==255u)return -1;
++        ++depth;return 0;
++    }
++    if(xSemaphoreTake(mutex,pdMS_TO_TICKS(ms))!=pdTRUE){
++        taskENTER_CRITICAL();
++        if(mode==BUS_SPI)++state.spi_waits;else ++state.fan_waits;
++        taskEXIT_CRITICAL();return -1;
++    }
++    /* Short GPIO handoff must not resume after MonitorTask's emergency stop. */
++    taskENTER_CRITICAL();
++    if(bsp_is_faulted()){taskEXIT_CRITICAL();xSemaphoreGive(mutex);return -1;}
++    owner=self;depth=1;state.mode=mode;
++    TIM3->CCR4=FAN_SAFE_CCR;
++    HAL_GPIO_WritePin(TB_STBY_PORT,TB_STBY_PIN,TB_SAFE_LEVEL);
++    __HAL_SPI_DISABLE(&hspi1);
++    HAL_GPIO_WritePin(TB_AIN1_PORT,TB_AIN1_PIN|TB_BIN1_PIN,TB_SAFE_LEVEL);
++    if(mode==BUS_SPI){
++        spi_pins();__HAL_SPI_ENABLE(&hspi1);
++        HAL_GPIO_WritePin(W25Q_CS_PORT,W25Q_CS_PIN,GPIO_PIN_SET);
++    }else{
++        TIM3->EGR=TIM_EGR_UG; /* Flush zero preload before raising STBY. */
++        g.Pin=TB_AIN1_PIN|TB_BIN1_PIN;g.Mode=GPIO_MODE_OUTPUT_PP;
++        g.Pull=GPIO_NOPULL;g.Speed=GPIO_SPEED_FREQ_LOW;HAL_GPIO_Init(TB_BIN1_PORT,&g);
++        g.Pin=TB_PWMA_PIN;g.Mode=GPIO_MODE_INPUT;HAL_GPIO_Init(TB_PWMA_PORT,&g);
++        HAL_GPIO_WritePin(TB_BIN2_PORT,TB_BIN2_PIN,TB_SAFE_LEVEL);
++        HAL_GPIO_WritePin(TB_BIN1_PORT,TB_BIN1_PIN,GPIO_PIN_SET);
++        HAL_GPIO_WritePin(TB_STBY_PORT,TB_STBY_PIN,GPIO_PIN_SET);
++    }
++    taskEXIT_CRITICAL();return 0;
++}
++static void give(unsigned mode)
+ {
+-    GPIO_InitTypeDef g={0};configASSERT(owner==xTaskGetCurrentTaskHandle());
+-    /* Disable bridge before SPI/pins; never drive MISO/PWMA. */
+-    HAL_GPIO_WritePin(TB_STBY_PORT,TB_STBY_PIN,TB_SAFE_LEVEL);TIM3->CCR4=FAN_SAFE_CCR;
++    GPIO_InitTypeDef g={0};
++    configASSERT(owner==xTaskGetCurrentTaskHandle() && state.mode==mode && depth);
++    if(--depth)return;
++    taskENTER_CRITICAL();
++    TIM3->CCR4=FAN_SAFE_CCR;
++    HAL_GPIO_WritePin(TB_STBY_PORT,TB_STBY_PIN,TB_SAFE_LEVEL);
+     __HAL_SPI_DISABLE(&hspi1);
+     HAL_GPIO_WritePin(TB_AIN1_PORT,TB_AIN1_PIN|TB_BIN1_PIN,TB_SAFE_LEVEL);
+     g.Pin=TB_AIN1_PIN|TB_BIN1_PIN;g.Mode=GPIO_MODE_OUTPUT_PP;g.Pull=GPIO_NOPULL;g.Speed=GPIO_SPEED_FREQ_LOW;
+-    HAL_GPIO_Init(TB_AIN1_PORT,&g);owner=NULL;xSemaphoreGive(mutex);
++    HAL_GPIO_Init(TB_AIN1_PORT,&g);
++    if(mode==BUS_FAN)spi_pins();
++    owner=NULL;state.mode=BUS_IDLE;
++    taskEXIT_CRITICAL();xSemaphoreGive(mutex);
+ }
++int spi_bus_take(uint32_t ms){return take(BUS_SPI,ms);}
++void spi_bus_give(void){give(BUS_SPI);}
++int fan_bus_take(uint32_t ms){return take(BUS_FAN,ms);}
++void fan_bus_give(void){give(BUS_FAN);}
++void bus_status(bus_status_t *out){if(out){taskENTER_CRITICAL();*out=state;taskEXIT_CRITICAL();}}
+diff --git a/BSP/bus_arbiter.h b/BSP/bus_arbiter.h
+index 59fdb3c..87ca3ba 100644
+--- a/BSP/bus_arbiter.h
++++ b/BSP/bus_arbiter.h
+@@ -7,4 +7,10 @@ int spi_bus_init(void);
+ int spi_bus_take(uint32_t timeout_ms);
+ /** @brief Return PA4/5/7 low, PWMB zero; release only from owning task. */
+ void spi_bus_give(void);
++/** @brief Same mutex, task-only fan ownership until fan_bus_give(). */
++int fan_bus_take(uint32_t timeout_ms);
++void fan_bus_give(void);
++typedef struct {uint32_t spi_waits,fan_waits;unsigned mode;} bus_status_t;
++enum {BUS_IDLE,BUS_SPI,BUS_FAN};
++void bus_status(bus_status_t *out);
+ #endif
+diff --git a/Docs/build.ps1 b/Docs/build.ps1
+index cc4a5a1..30f2c2d 100644
+--- a/Docs/build.ps1
++++ b/Docs/build.ps1
+@@ -1,6 +1,11 @@
+-param([ValidateSet('M0','M1','M2','M3','M4')][string]$Stage='M4')
++param([ValidateSet('M0','M1','M2','M3','M4','M5','M5-stress')][string]$Stage='M5')
+ $ErrorActionPreference = 'Stop'
+ $projectRoot = Split-Path $PSScriptRoot -Parent
++if ($Stage -in @('M5','M5-stress')) {
++    $config = Get-Content -LiteralPath "$projectRoot/App/app_config.h" -Raw
++    $enabled = $config -match '(?m)^#define APP_M5_STRESS_ENABLED 1\s*$'
++    if ($enabled -ne ($Stage -eq 'M5-stress')) { throw 'APP_M5_STRESS_ENABLED must be 0 for M5, 1 for M5-stress.' }
++}
+ $fso = New-Object -ComObject Scripting.FileSystemObject
+ $shortRoot = $fso.GetFolder($projectRoot).ShortPath
+ $arguments = "-r $shortRoot/MDK-ARM/sms-hub.uvprojx -j0 -o $shortRoot/Docs/$Stage-build.log"
+@@ -8,5 +13,10 @@ $process = Start-Process 'D:/Keil_v5/UV4/UV4.exe' -ArgumentList $arguments -Wind
+ $process.WaitForExit()
+ $log = Get-Content -LiteralPath "$projectRoot/Docs/$Stage-build.log" -Raw
+ if ($log -notmatch '0 Error\(s\), 0 Warning\(s\)') { throw $log }
++if ($log -notmatch 'Code=(\d+) RO-data=(\d+) RW-data=(\d+) ZI-data=(\d+)') { throw 'Missing program-size evidence.' }
++$flashBytes = [int]$Matches[1] + [int]$Matches[2] + [int]$Matches[3]
++$ramBytes = [int]$Matches[3] + [int]$Matches[4]
++if ($flashBytes -gt 61440 -or $ramBytes -gt 20480) { throw "Budget exceeded: Flash=$flashBytes RAM=$ramBytes." }
+ Copy-Item -LiteralPath "$projectRoot/MDK-ARM/Objects/sms-hub.map" -Destination "$projectRoot/Docs/$Stage-map.txt"
+ Write-Output ($log -split "`n" | Select-Object -Last 5)
++Write-Output "Flash=$flashBytes/61440B RAM=$ramBytes/20480B"
+diff --git a/Docs/test_controls.c b/Docs/test_controls.c
+index ca81835..e30b98d 100644
+--- a/Docs/test_controls.c
++++ b/Docs/test_controls.c
+@@ -18,6 +18,12 @@ typedef struct { unsigned size,count,head,tail,capacity; uint8_t data[256]; } *Q
+ static unsigned pins[3],now,pwm[3],buzz;
+ static int htim2;
+ static int fault;
++int servo_init(void){return 0;}
++int fan_init(void){return 0;}
++void servo_poll(uint32_t tick){(void)tick;}
++unsigned __get_IPSR(void){return 0;}
++#define taskENTER_CRITICAL() ((void)0)
++#define taskEXIT_CRITICAL() ((void)0)
+ void ec11_irq(void) {}
+ void dht11_edge_irq(void) {}
+ void cs100a_edge_irq(void) {}
+@@ -65,6 +71,7 @@ static int xQueueSend(QueueHandle_t q,const void *p,unsigned timeout)
+ { (void)timeout;if(q->count==q->capacity)return 0;memcpy(q->data+q->tail*q->size,p,q->size);q->tail=(q->tail+1)%q->capacity;q->count++;return 1; }
+ static int xQueueReceive(QueueHandle_t q,void *p,unsigned timeout)
+ { (void)timeout;if(!q->count)return 0;memcpy(p,q->data+q->head*q->size,q->size);q->head=(q->head+1)%q->capacity;q->count--;return 1; }
++static void xQueueReset(QueueHandle_t q){q->count=q->head=q->tail=0;}
+ static int xQueueSendFromISR(QueueHandle_t q,const void *p,BaseType_t *wake)
+ { *wake=0;return xQueueSend(q,p,0); }
+ static TimerHandle_t xTimerCreate(const char *n,unsigned t,int reload,void *id,void (*cb)(TimerHandle_t))
+@@ -75,10 +82,16 @@ static void step(unsigned ms) { now+=ms;controls_tick(NULL); }
+ int main(void)
+ {
+     key_event_t e; unsigned i;
+-    assert(!bsp_controls_init()); assert(pwm[0]==999);
+-    step(200);assert(pwm[1]==999 && pwm[0]==0);
+-    step(200);assert(pwm[2]==999);
+-    step(200);assert(pwm[0]+pwm[1]+pwm[2]==0);
++    assert(!bsp_controls_init()); assert(pwm[0]+pwm[1]+pwm[2]==0&&!buzz);
++    assert(!effect_set(EFFECT_FIRE));step(10);assert(pwm[0]==999&&buzz);
++    step(100);assert(!buzz);step(150);assert(!pwm[0]);step(250);assert(pwm[0]==999);
++    assert(!effect_set(EFFECT_INTRUSION));step(10);assert(pwm[0]==999&&pwm[2]==999&&buzz);
++    step(500);assert(!pwm[0]&&!pwm[2]&&buzz);step(1000);assert(!buzz);
++    assert(!effect_set(EFFECT_AIR));step(10);assert(pwm[0]==999&&pwm[1]==999&&!buzz);
++    assert(!effect_set(EFFECT_FAULT));step(10);assert(pwm[0]==999&&pwm[1]==999);step(500);assert(!pwm[0]&&!pwm[1]);
++    assert(!effect_set(EFFECT_NETWORK));step(500);assert(pwm[1]==499);step(500);assert(pwm[1]==999);step(1000);assert(!pwm[1]);
++    now=UINT32_MAX-100;assert(!effect_set(EFFECT_FIRE));step(400);assert(!pwm[0]&&buzz);
++    assert(effect_set(EFFECT_COUNT)==-1);assert(!effect_set(EFFECT_STANDBY));step(10);assert(!buzz&&!pwm[0]&&!pwm[1]&&!pwm[2]);
+     for(i=0;i<3;i++) {
+         pins[i]=1;step(10);pins[i]=0;step(10);assert(!bsp_key_get(&e));
+         pins[i]=1;step(10);step(30);step(100);pins[i]=0;step(10);step(30);
+@@ -91,6 +104,7 @@ int main(void)
+     { beep_pattern_t p={20,30,2};assert(!beep_pattern(&p));step(10);assert(buzz);step(20);assert(!buzz);step(30);assert(buzz);step(20);assert(!buzz); }
+     assert(rgb_set(1000,0,0)==-1);
+     fault=1;assert(beep_ms(20)==-1);assert(rgb_set(1,1,1)==-1);step(10);assert(!buzz);
+-    puts("PASS actual controls: RGB sequence, bounce, three key sources, click/long exclusivity, beep sequence");
++    assert(effect_set(EFFECT_FIRE)==-1);
++    puts("PASS actual controls: safe startup, six effects/timing/wrap/cancel/fault, debounce/click/long, queued beep");
+     free(keys);free(edges);free(beeps);return 0;
+ }
+diff --git a/Docs/test_flash_bus.py b/Docs/test_flash_bus.py
+index 7623d22..a56cb29 100644
+--- a/Docs/test_flash_bus.py
++++ b/Docs/test_flash_bus.py
+@@ -9,7 +9,7 @@ header=r'''
+ #include <stddef.h>
+ typedef struct {unsigned port;} GPIO_TypeDef;
+ typedef struct {int unused;} TIM_HandleTypeDef;
+-typedef struct {uint32_t CCR4;} Timer;
++typedef struct {uint32_t CCR4,EGR;} Timer;
+ typedef struct {uint32_t Pin,Mode,Pull,Speed;} GPIO_InitTypeDef;
+ extern GPIO_TypeDef ga,gb;extern Timer tim3;
+ #define GPIOA (&ga)
+@@ -24,6 +24,8 @@ extern GPIO_TypeDef ga,gb;extern Timer tim3;
+ #define GPIO_SPEED_FREQ_HIGH 1u
+ #define GPIO_SPEED_FREQ_LOW 0u
+ #define HAL_OK 0
++#define TIM_EGR_UG 1u
++typedef int HAL_StatusTypeDef;
+ unsigned __get_IPSR(void);unsigned __get_PRIMASK(void);unsigned __get_BASEPRI(void);
+ uint32_t HAL_GetTick(void);
+ void HAL_GPIO_WritePin(GPIO_TypeDef*,uint32_t,uint32_t);
+@@ -36,8 +38,8 @@ void fake_enable(int);
+ ''' + ''.join(f'#define GPIO_PIN_{i} (1u<<{i})\n' for i in range(16))+'#endif\n'
+ (out/'stm32f1xx_hal.h').write_text(header)
+ (out/'spi.h').write_text('extern int hspi1;\n')
+-(out/'FreeRTOS.h').write_text('#include <assert.h>\n#define configASSERT(x) assert(x)\n#define pdTRUE 1\n#define pdMS_TO_TICKS(x) (x)\n#define taskSCHEDULER_RUNNING 2\n')
+-(out/'task.h').write_text('typedef void* TaskHandle_t;\nTaskHandle_t xTaskGetCurrentTaskHandle(void);\nint xTaskGetSchedulerState(void);\nvoid vTaskDelay(unsigned);\n')
++(out/'FreeRTOS.h').write_text('#include <assert.h>\n#define configASSERT(x) assert(x)\n#define pdTRUE 1\n#define pdMS_TO_TICKS(x) (x)\n#define taskSCHEDULER_RUNNING 2\n#define taskENTER_CRITICAL() ((void)0)\n#define taskEXIT_CRITICAL() ((void)0)\n')
++(out/'task.h').write_text('typedef void* TaskHandle_t;\nTaskHandle_t xTaskGetCurrentTaskHandle(void);\nint xTaskGetSchedulerState(void);\nvoid vTaskDelay(unsigned);\nvoid vTaskSuspendAll(void);\nint xTaskResumeAll(void);\n')
+ (out/'semphr.h').write_text('typedef void* SemaphoreHandle_t;\nSemaphoreHandle_t xSemaphoreCreateMutex(void);\nint xSemaphoreTake(void*,unsigned);\nint xSemaphoreGive(void*);\n')
+ code=r'''
+ #include <assert.h>
+@@ -46,59 +48,112 @@ code=r'''
+ #include "app_config.h"
+ #include "bus_arbiter.h"
+ #include "w25q64.h"
++#include "kvstore.h"
+ GPIO_TypeDef ga={0},gb={1};Timer tim3;int hspi1;
+ static uint8_t mem[8192];
+ static uint32_t now,address,id=0xef4017;static unsigned cmd,count,selected,enabled,locked,fault,deny,ipsr,primask,basepri;
+-static unsigned mode[16],level[16],wel,busy,stuck,fail_rx,corrupt;
++static unsigned mode[16],level[16],wel,busy,stuck,fail_tx,fail_rx,corrupt,stall_address;
++static unsigned suspended,deferred,preemptions,preempt_ms,trip_fault;
++static uint32_t preempt_address;
++static uintptr_t self=2;
+ void *xSemaphoreCreateMutex(void){return (void*)1;}
+-int xSemaphoreTake(void *m,unsigned ms){(void)m;(void)ms;if(deny)return 0;assert(!locked);locked=1;return 1;}
++int xSemaphoreTake(void *m,unsigned ms){(void)m;(void)ms;if(deny||locked)return 0;locked=1;return 1;}
+ int xSemaphoreGive(void *m){(void)m;assert(locked);locked=0;return 1;}
+-void *xTaskGetCurrentTaskHandle(void){return (void*)2;}
++void *xTaskGetCurrentTaskHandle(void){return (void*)self;}
+ int xTaskGetSchedulerState(void){return 2;}
++void vTaskSuspendAll(void){++suspended;}
++int xTaskResumeAll(void){assert(suspended);if(--suspended==0){now+=deferred;deferred=0;}return 1;}
+ int bsp_is_faulted(void){return fault;}
+ unsigned __get_IPSR(void){return ipsr;}unsigned __get_PRIMASK(void){return primask;}unsigned __get_BASEPRI(void){return basepri;}
+ uint32_t HAL_GetTick(void){return now;}
+-void vTaskDelay(unsigned n){now+=n;if(busy&&!stuck)busy=0;}
++void vTaskDelay(unsigned n){assert(!suspended&&!primask&&!basepri&&!selected);now+=n;if(busy&&!stuck)busy=0;}
+ void fake_enable(int v){enabled=(unsigned)v;}
+ void HAL_GPIO_Init(GPIO_TypeDef *p,GPIO_InitTypeDef *g){unsigned i;assert(p==GPIOA);for(i=0;i<16;i++)if(g->Pin&(1u<<i)){if(i==6)assert(g->Mode==GPIO_MODE_INPUT);mode[i]=g->Mode;}}
+-void HAL_GPIO_WritePin(GPIO_TypeDef *p,uint32_t pins,uint32_t v){unsigned i;assert(p==GPIOA);for(i=0;i<16;i++)if(pins&(1u<<i))level[i]=v;
++void HAL_GPIO_WritePin(GPIO_TypeDef *p,uint32_t pins,uint32_t v){unsigned i;if(p==GPIOB){assert(pins==GPIO_PIN_13&&v==0);return;}assert(p==GPIOA);for(i=0;i<16;i++)if(pins&(1u<<i))level[i]=v;
++ if(fault&&(pins&GPIO_PIN_4))assert(v==GPIO_PIN_RESET);
+  if(pins&GPIO_PIN_4){
+   if(!v){selected=1;cmd=count=address=0;}
+   else if(selected){selected=0;if(cmd==6)wel=1;if(cmd==2 || cmd==0x20){wel=0;busy=1;}}
+  }}
+-int HAL_SPI_Transmit(void *p,uint8_t *b,uint16_t n,uint32_t timeout){unsigned i;(void)p;(void)timeout;assert(locked&&enabled&&selected);
++int HAL_SPI_Transmit(void *p,uint8_t *b,uint16_t n,uint32_t timeout){unsigned i;(void)p;assert(locked&&enabled&&selected&&!primask&&!basepri);
++ if(trip_fault){trip_fault=0;fault=1;enabled=0;level[4]=0;tim3.CCR4=0;return 3;}
++ if(fail_tx){now+=timeout;return 3;}
+  for(i=0;i<n;i++){
+   if(count==0)cmd=b[i];
+   else if((cmd==3||cmd==2||cmd==0x20)&&count<=3){address=(address<<8)|b[i];if(count==3&&cmd==0x20){assert(wel&&address%4096==0);memset(mem+address,0xff,4096);}}
+   else if(cmd==2){assert(wel&&address<sizeof(mem));mem[address++]&=corrupt?0:b[i];}
+   count++;
+  }return 0;}
+-int HAL_SPI_Receive(void *p,uint8_t *b,uint16_t n,uint32_t timeout){unsigned i;(void)p;(void)timeout;assert(locked&&enabled&&selected);if(fail_rx)return 1;
++int HAL_SPI_Receive(void *p,uint8_t *b,uint16_t n,uint32_t timeout){unsigned i;(void)p;assert(locked&&enabled&&selected&&!primask&&!basepri);
++ if(fail_rx||(stall_address&&cmd==3&&address==preempt_address)){now+=timeout;return 3;}
++ /* HAL master receive delegates to TxRx, whose byte loop tests elapsed HAL ticks.
++  * A higher-priority polling task consumes 40ms if context switches are allowed. */
++ if(preempt_ms&&cmd==3&&address==preempt_address){
++  unsigned elapsed=suspended?0:preempt_ms;++preemptions;
++  if(suspended)deferred+=preempt_ms;else now+=preempt_ms;
++  preempt_ms=0;if(elapsed>=timeout)return 3;
++ }
+  for(i=0;i<n;i++){
+   if(cmd==5)b[i]=(uint8_t)((busy?1:0)|(wel?2:0));
+   else if(cmd==0x9f)b[i]=(uint8_t)(id>>(16u-8u*i));
+   else {assert(cmd==3&&address<sizeof(mem));b[i]=mem[address++];}
+  }return 0;}
+-static void safe(void){assert(!locked&&!enabled&&level[4]==0&&level[5]==0&&level[7]==0&&mode[6]==GPIO_MODE_INPUT&&tim3.CCR4==0);}
++static void safe(void){assert(!suspended&&!deferred&&!locked&&!enabled&&level[4]==0&&level[5]==0&&level[7]==0&&mode[6]==GPIO_MODE_INPUT&&tim3.CCR4==0);}
+ int main(void){
+  uint8_t data[40],read[40];memset(mem,0xff,sizeof(mem));memset(data,0xa5,sizeof(data));assert(!spi_bus_init());
+  assert(!w25q_init()&&w25q_id()==W25Q_JEDEC_ID);safe();
++ {
++  unsigned cycle;bus_status_t s;uint32_t fresh;
++  assert(!spi_bus_take(0));assert(!spi_bus_take(0));assert(fan_bus_take(0)==-1);
++  spi_bus_give();assert(locked);spi_bus_give();safe();
++  for(cycle=0;cycle<100;cycle++){
++   self=3;assert(!fan_bus_take(0));assert(!enabled&&level[4]==1&&level[7]==1&&mode[7]==GPIO_MODE_OUTPUT_PP);
++   self=2;assert(w25q_probe(&fresh)==-1);assert(level[4]==1&&level[7]==1);
++   self=3;fan_bus_give();safe();self=2;
++   assert(!w25q_probe(&fresh)&&fresh==W25Q_JEDEC_ID);safe();
++  }
++  for(cycle=0;cycle<100;cycle++){
++   self=2;assert(!spi_bus_take(0));
++   self=3;assert(fan_bus_take(0)==-1);assert(enabled&&level[4]==1&&mode[7]==GPIO_MODE_AF_PP);
++   self=2;assert(!w25q_read(0,read,1));spi_bus_give();safe();
++   self=3;assert(!fan_bus_take(0));fan_bus_give();self=2;
++   assert(!w25q_probe(&fresh)&&fresh==W25Q_JEDEC_ID);safe();
++  }
++  bus_status(&s);assert(s.spi_waits==100&&s.fan_waits==100&&s.mode==BUS_IDLE);
++  puts("PASS actual arbiter/W25Q model: fan->SPI 100/100, SPI->fan 100/100, fresh JEDEC200/200, mode/nesting/no-pin-change-on-contention");
++ }
+  assert(w25q_program(250,data,20)==-1);safe();assert(!w25q_program(256,data,40));safe();
+  assert(!w25q_read(256,read,40)&&!memcmp(data,read,40));safe();assert(w25q_program(256,data,40)==-1);safe();
+  assert(w25q_erase(1)==-1);assert(!w25q_erase(0));safe();assert(w25q_erases()==1);
+  corrupt=1;assert(w25q_program(256,data,40)==-1);safe();corrupt=0;
+  stuck=busy=1;assert(w25q_read(0,read,1)==-1);assert(now>=APP_FLASH_PROGRAM_MS);safe();stuck=busy=0;
+- fail_rx=1;assert(w25q_read(0,read,1)==-1);safe();fail_rx=0;
++ {uint32_t begin=now;fail_tx=1;assert(w25q_read(0,read,1)==-1);safe();fail_tx=0;assert(now-begin==APP_FLASH_SPI_TIMEOUT_MS);}
++ {uint32_t begin=now;fail_rx=1;assert(w25q_read(0,read,1)==-1);safe();fail_rx=0;assert(now-begin==APP_FLASH_SPI_TIMEOUT_MS);}
++ trip_fault=1;assert(w25q_read(0,read,1)==-1);safe();assert(fault&&level[4]==0);fault=0;
++ puts("PASS emergency during SPI: deselect cleanup cannot raise shared CS/STBY after latched fault");
+  deny=1;assert(w25q_read(0,read,1)==-1);deny=0;
+  fault=1;assert(spi_bus_take(100)==-1);fault=0;
+  ipsr=1;assert(spi_bus_take(100)==-1);ipsr=0;primask=1;assert(spi_bus_take(100)==-1);primask=0;basepri=80;assert(spi_bus_take(100)==-1);basepri=0;
+  id=0x123456;assert(w25q_init()==-1);assert(w25q_program(0,data,1)==-1);safe();
++ {
++  config_t config;int result;
++  id=W25Q_JEDEC_ID;memset(mem,0xff,sizeof(mem));assert(!w25q_init());
++  assert(kv_load(&config)==1&&config.seq==2);safe();
++  preempt_address=FLASH_KV_ADDR_B+KV_RECORD_SIZE;preempt_ms=40;
++  result=kv_load(&config);
++  printf("KV scan under 40ms task preemption: result=%d seq=%lu\n",result,(unsigned long)config.seq);
++  fflush(stdout);assert(preemptions==1&&result==0&&config.seq==2);safe();
++  puts("PASS actual KV/W25Q: scan survives task preemption after finding seq2, scheduler restored, busy polling yields");
++  stall_address=1;assert(kv_load(&config)==-1&&config.seq==2);safe();stall_address=0;
++  assert(kv_save(&config)==-1);assert(!kv_load(&config)&&config.seq==2);safe();
++  puts("PASS injected HAL TX/RX timeouts still fail closed; failed scan prevents writes until rescan, no data erased");
++ }
+  puts("PASS actual W25Q/arbiter: identity, WEL, page/alignment validation, readback, busy timeout, failure cleanup, no MISO output, fault/ISR guards");return 0;
+ }
+ '''
+ (out/'test.c').write_text(code)
+ env=dict(os.environ);env['PATH']='D:/msys64/ucrt64/bin;'+env['PATH']
+ args=['D:/msys64/ucrt64/bin/gcc.exe','-std=c99','-Wall','-Wextra','-Werror']
+-for p in ['tmp/flash-bus-test','App','BSP','Drivers_Device/w25q64']:args+=['-I',p]
+-args+=['tmp/flash-bus-test/test.c','BSP/bus_arbiter.c','Drivers_Device/w25q64/w25q64.c','-o','tmp/flash-bus-test/test.exe']
++for p in ['tmp/flash-bus-test','App','BSP','Drivers_Device/w25q64','Drivers_Device/kvstore']:args+=['-I',p]
++args+=['tmp/flash-bus-test/test.c','BSP/bus_arbiter.c','Drivers_Device/w25q64/w25q64.c','Drivers_Device/kvstore/kvstore.c','-o','tmp/flash-bus-test/test.exe']
+ subprocess.run(args,cwd=root,env=env,check=True);subprocess.run([str(out/'test.exe')],cwd=root,env=env,check=True)
+diff --git a/Docs/test_m2.py b/Docs/test_m2.py
+index cc5f581..17d3b4c 100644
+--- a/Docs/test_m2.py
++++ b/Docs/test_m2.py
+@@ -8,7 +8,7 @@ def compile_run(name,source):
+     (out/(name+'.c')).write_text(source,encoding='utf-8')
+     subprocess.run(['D:/msys64/ucrt64/bin/gcc.exe','-std=c99','-Wall','-Wextra','-Werror',
+       '-I','Drivers_Device/kvstore','-I','Drivers_Device/eventlog','-I','Drivers_Device','-I','BSP','-I','App','-I','Inc','-I','Drivers_Device/ec11','-I','Drivers_Device/oled_ssd1306','-I','App/menu',
+-      '-I','Drivers_Device/oled_ui','-I','tmp/m2','tmp/m2/'+name+'.c','-o','tmp/m2/'+name+'.exe'],cwd=root,env=env,check=True)
++      '-I','Drivers_Device/sg90','-I','Drivers_Device/tb6612_fan','-I','Drivers_Device/oled_ui','-I','tmp/m2','tmp/m2/'+name+'.c','-o','tmp/m2/'+name+'.exe'],cwd=root,env=env,check=True)
+     subprocess.run([str(out/(name+'.exe'))],cwd=root,env=env,check=True)
+ ec=(root/'Drivers_Device/ec11/ec11.c').read_text(encoding='utf-8')
+ part=ec[ec.index('void ec11_reset'):ec.index('static uint8_t sample')]
+@@ -125,6 +125,12 @@ uint32_t rtc_get(void){return 3661;}
+ uint32_t vdda_mv_get(void){return 3300;}
+ int beep_ms(uint16_t ms){(void)ms;beeps++;return 0;}
+ int rgb_set(uint16_t r,uint16_t g,uint16_t b){colors=r+g+b;return 0;}
++static unsigned fan_value,servo_value;
++int fan_set(unsigned p){assert(p<=100);fan_value=p;return 0;}
++unsigned fan_percent(void){return fan_value;}
++int servo_write(unsigned p){assert(p<=180);servo_value=p;return 0;}
++unsigned servo_angle(void){return servo_value;}
++int effect_set(effect_t e){assert(e<EFFECT_COUNT);colors=0;return 0;}
+ void i2c_scan(void){}
+ void bsp_log(const char *level,const char *format,...){(void)level;(void)format;}
+ #include "../../Drivers_Device/oled_ui/oled_ui.c"
+@@ -141,8 +147,19 @@ int main(void){
+  assert(save_calls==0);menu_key(&yes);assert(!editing&&save_calls==1&&persisted[0]==APP_EDIT_MAX_TEMP);
+  menu_key(&back);selected[ROOT]=5;menu_key(&yes);now+=100;menu_poll();
+  assert(history_count==20&&history_reads>0);selected[EVENTLOG]=19;menu_key(&next);assert(selected[EVENTLOG]==0);
+- menu_key(&back);selected[ROOT]=3;menu_key(&yes);menu_key(&yes);assert(beeps==1);
+- selected[MANUAL]=1;menu_key(&yes);assert(colors==999);selected[MANUAL]=4;menu_key(&yes);assert(colors==0);
++ menu_key(&back);selected[ROOT]=3;menu_key(&yes);selected[MANUAL]=9;menu_key(&yes);assert(beeps==1);
++ selected[MANUAL]=10;menu_key(&yes);assert(colors==999);selected[MANUAL]=8;menu_key(&yes);assert(colors==0);
++ selected[MANUAL]=0;menu_key(&yes);assert(editing);
++ for(i=0;i<110;i++){menu_key(&next);}assert(fan_value==100);menu_poll();menu_key(&yes);
++ selected[MANUAL]=1;menu_key(&yes);for(i=0;i<190;i++)menu_key(&next);assert(servo_value==180);menu_poll();menu_key(&yes);
++ selected[MANUAL]=2;now+=100;menu_poll();menu_key(&back);assert(!fan_value&&!servo_value);
++ stack[depth]=MANUAL;
++ for(i=0;i<3;i++){
++  char path[64];FILE *f;unsigned x,y;selected[MANUAL]=i;manual_fan=100;manual_servo=180;
++  fan_value=100;servo_value=180;oled_clear();render_manual();
++  snprintf(path,sizeof(path),"tmp/m2/manual-%u.pbm",i);f=fopen(path,"wb");assert(f);fprintf(f,"P1\n128 64\n");
++  for(y=0;y<64;y++){for(x=0;x<128;x++)fprintf(f,"%u ",(pixels[y/8*128+x]>>(y&7))&1);fputc('\n',f);}fclose(f);
++ }
+  for(i=0;i<PAGE_COUNT;i++){
+   char path[64];FILE *f;unsigned x,y;stack[depth]=(page_id)i;oled_clear();pages[i].render();
+   snprintf(path,sizeof(path),"tmp/m2/page-%u.pbm",i);f=fopen(path,"wb");assert(f);fprintf(f,"P1\n128 64\n");
+@@ -158,6 +175,11 @@ for i,p in enumerate(paths):
+     im=Image.open(p).convert('L');im=ImageOps.invert(im).resize((512,256),Image.Resampling.NEAREST)
+     sheet.paste(im,(0,i*280+18));draw.text((0,i*280),p.stem,fill='white')
+ sheet.save(out/'preview.png')
++manual_sheet=Image.new('RGB',(512,3*256),'black')
++for i,p in enumerate(sorted(out.glob('manual-*.pbm'))):
++    im=ImageOps.invert(Image.open(p).convert('L')).resize((512,256),Image.Resampling.NEAREST)
++    manual_sheet.paste(im,(0,i*256))
++manual_sheet.save(root/'Docs/M5-manual-host.png')
+ 
+ console=(root/'BSP/bsp_console.c').read_text(encoding='utf-8')
+ quiet_code=console[console.index('int bsp_log_quiet_begin'):console.index('static const char *display_task')]
+diff --git a/Docs/test_storage.py b/Docs/test_storage.py
+index 9516531..a241a82 100644
+--- a/Docs/test_storage.py
++++ b/Docs/test_storage.py
+@@ -25,7 +25,12 @@ int xSemaphoreGive(void *m){return m!=NULL;}
+ void *xQueueCreate(unsigned n,unsigned size){TestQueue*q=calloc(1,sizeof(*q));assert(n*size<=128);q->n=n;q->size=size;return q;}
+ int xQueueSend(void *v,const void*p,unsigned ms){TestQueue*q=v;(void)ms;if(q->count==q->n)return 0;memcpy(q->data+q->tail*q->size,p,q->size);q->tail=(q->tail+1)%q->n;q->count++;return 1;}
+ int xQueueReceive(void *v,void*p,unsigned ms){TestQueue*q=v;(void)ms;if(!q->count)return 0;memcpy(p,q->data+q->head*q->size,q->size);q->head=(q->head+1)%q->n;q->count--;return 1;}
+-int spi_bus_init(void){return 0;}unsigned __get_IPSR(void){return 0;}
++unsigned uxQueueMessagesWaiting(void *v){return ((TestQueue*)v)->count;}
++static int bus_busy,bus_held;
++int spi_bus_init(void){return 0;}
++int spi_bus_take(uint32_t ms){(void)ms;if(bus_busy)return -1;assert(!bus_held);bus_held=1;return 0;}
++void spi_bus_give(void){assert(bus_held);bus_held=0;}
++unsigned __get_IPSR(void){return 0;}
+ uint32_t rtc_get(void){return 12345;}
+ int datahub_set_gas_limits(uint32_t a,uint32_t b){applied_smoke=a;applied_air=b;return 0;}
+ void bsp_log(const char*l,const char*f,...){(void)l;(void)f;}
+@@ -120,7 +125,11 @@ int main(void){
+   assert(!storage_get_fields(fields,&status)&&status.ready&&fields[CFG_TEMP]==50);
+   assert(!storage_set(CFG_TEMP,66));assert(storage_set(CFG_TEMP,67)==-1);
+   assert(!storage_get_fields(fields,&status)&&fields[CFG_TEMP]==50&&status.pending);
++  bus_busy=1;for(i=0;i<100;i++)storage_poll();
++  assert(!storage_get_fields(fields,&status)&&status.ready&&!status.errors&&status.pending&&fields[CFG_TEMP]==50);
++  bus_busy=0;
+   storage_poll();assert(!storage_get_fields(fields,&status)&&fields[CFG_TEMP]==66&&!status.pending);
++  assert(!bus_held);
+   assert(applied_smoke==DEF_SMOKE_CONFIRM_MS);assert(!kv_load(&c)&&c.temp_x10==660);
+   assert(!storage_recent(0,&rec,&nr)&&rec.type==EVENT_CONFIG);
+   for(i=0;i<APP_STORAGE_QUEUE;i++)assert(!storage_event(EVENT_MANUAL,(int32_t)i,0));
+@@ -129,13 +138,13 @@ int main(void){
+   assert(!storage_get_fields(fields,&status)&&!status.ready&&status.errors&&fields[CFG_TEMP]==66);
+   assert(storage_set(CFG_TEMP,88)==-1);assert(!kv_load(&c)&&c.temp_x10==660);
+  }
+- puts("PASS actual storage queue: offline/busy/full refusal, apply after commit only, failure retains prior visible/durable config");
++ puts("PASS actual storage queue: 100 fan waits preserve queued config/ready state, offline/busy/full refusal, commit-only apply, failure retains prior config");
+  return 0;
+ }
+ '''
+ (OUT/'FreeRTOS.h').write_text('#include <assert.h>\n#define configASSERT(x) assert(x)\n#define pdTRUE 1\n#define pdMS_TO_TICKS(x) (x)\n#define portMAX_DELAY 0xffffffffu\n')
+ (OUT/'semphr.h').write_text('typedef void* SemaphoreHandle_t;\nSemaphoreHandle_t xSemaphoreCreateMutex(void);\nint xSemaphoreTake(void*,unsigned);\nint xSemaphoreGive(void*);\n')
+-(OUT/'queue.h').write_text('typedef void* QueueHandle_t;\nQueueHandle_t xQueueCreate(unsigned,unsigned);\nint xQueueSend(void*,const void*,unsigned);\nint xQueueReceive(void*,void*,unsigned);\n')
++(OUT/'queue.h').write_text('typedef void* QueueHandle_t;\nQueueHandle_t xQueueCreate(unsigned,unsigned);\nint xQueueSend(void*,const void*,unsigned);\nint xQueueReceive(void*,void*,unsigned);\nunsigned uxQueueMessagesWaiting(void*);\n')
+ (OUT/'test.c').write_text(test)
+ args=['D:/msys64/ucrt64/bin/gcc.exe','-std=c99','-O1','-Wall','-Wextra','-Werror']
+ for path in ['tmp/storage-test','Drivers_Device','App','BSP','Drivers_Device/kvstore','Drivers_Device/eventlog','Drivers_Device/w25q64']:args+=['-I',path]
+diff --git a/Drivers_Device/dht11/dht11.c b/Drivers_Device/dht11/dht11.c
+index 93cdf7e..20c5fc6 100644
+--- a/Drivers_Device/dht11/dht11.c
++++ b/Drivers_Device/dht11/dht11.c
+@@ -11,6 +11,8 @@ static volatile uint8_t active,seen_low,level,error;
+ static sensor_filter_t temperature_filter,humidity_filter;
+ static dht11_debug_t debug_info;
+ static volatile uint32_t edge_gap;
++static volatile uint32_t capture_irqs;
++static uint8_t low_level,released_level,end_level;
+ static dht11_error_t decode_error;
+ static unsigned decode_index,decode_width;
+ 
+@@ -23,6 +25,8 @@ static int read_bad(dht11_error_t why,uint32_t start_ms,uint32_t capture_us)
+     debug_info.captured_widths=captured;
+     debug_info.bad_index=why==DHT_ERR_EDGE_GAP?captured:decode_index;
+     debug_info.bad_width_us=why==DHT_ERR_EDGE_GAP?edge_gap:decode_width;
++    debug_info.irqs=capture_irqs;debug_info.low_level=low_level;
++    debug_info.released_level=released_level;debug_info.end_level=end_level;
+     temperature_filter.count=humidity_filter.count=0;
+     temperature_filter.next=humidity_filter.next=0;
+     return -1;
+@@ -59,11 +63,16 @@ static void input_mode(void)
+     HAL_GPIO_Init(DHT11_PORT,&g);
+ }
+ int dht11_init(sensor_id_t id)
+-{(void)id;active=0;temperature_filter.count=humidity_filter.count=0;temperature_filter.next=humidity_filter.next=0;input_mode();return 0;}
++{
++    GPIO_InitTypeDef g={0};g.Pin=DHT11_PIN;g.Mode=GPIO_MODE_IT_RISING_FALLING;g.Pull=GPIO_PULLUP;
++    (void)id;active=0;temperature_filter.count=humidity_filter.count=0;temperature_filter.next=humidity_filter.next=0;
++    HAL_GPIO_Init(DHT11_PORT,&g);input_mode();return 0;
++}
+ void dht11_edge_irq(void)
+ {
+     uint8_t next;uint32_t now,dt;
+     if(!active)return;
++    ++capture_irqs;
+     next=(DHT11_PORT->IDR&DHT11_PIN)?1u:0u;now=bsp_micros();
+     if(!seen_low){if(!next){seen_low=1;level=0;last_edge=now;}return;}
+     if(next==level)return;
+@@ -80,22 +89,28 @@ int dht11_read(sensor_id_t id,sensor_value_t *out)
+     /* PB12 replaces unused EC11 EXTI12. Never mask full3~5ms response:
+      * TIM4 priority4 remains active; short setup critical section only.
+      * No delay/print/flash in critical section or ISR. */
+-    active=0;captured=0;decode_index=decode_width=0;
++    active=0;captured=0;capture_irqs=0;decode_index=decode_width=0;
++    low_level=released_level=end_level=2u;
+     HAL_GPIO_WritePin(DHT11_PORT,DHT11_PIN,GPIO_PIN_RESET);
+     g.Pin=DHT11_PIN;g.Mode=GPIO_MODE_OUTPUT_OD;g.Speed=GPIO_SPEED_FREQ_LOW;g.Pull=GPIO_PULLUP;
+     HAL_GPIO_Init(DHT11_PORT,&g);start=HAL_GetTick();
+     vTaskDelay(pdMS_TO_TICKS(DHT11_START_LOW_MS)+1u);
+     start_ms=HAL_GetTick()-start;
++    low_level=(uint8_t)HAL_GPIO_ReadPin(DHT11_PORT,DHT11_PIN);
+     if(start_ms>DHT11_START_MAX_MS){input_mode();return read_bad(DHT_ERR_START_LONG,start_ms,0);}
+     taskENTER_CRITICAL();
+     captured=0;edge_gap=0;error=seen_low=0;active=1;
+-    g.Mode=GPIO_MODE_IT_RISING_FALLING;HAL_GPIO_Init(DHT11_PORT,&g);
++    /* Arm EXTI before releasing open-drain: the response can begin in 10us. */
+     __HAL_GPIO_EXTI_CLEAR_IT(DHT11_PIN);
+-    taskEXIT_CRITICAL();
++    EXTI->IMR|=DHT11_PIN;
+     start=bsp_micros();
++    HAL_GPIO_WritePin(DHT11_PORT,DHT11_PIN,GPIO_PIN_SET);
++    released_level=(uint8_t)HAL_GPIO_ReadPin(DHT11_PORT,DHT11_PIN);
++    taskEXIT_CRITICAL();
+     while(active && (uint32_t)(bsp_micros()-start)<DHT11_CAPTURE_TIMEOUT_US)vTaskDelay(1);
+     taskENTER_CRITICAL();active=0;taskEXIT_CRITICAL();
+     capture_us=bsp_micros()-start;
++    end_level=(uint8_t)HAL_GPIO_ReadPin(DHT11_PORT,DHT11_PIN);
+     input_mode();
+     if(error)return read_bad(DHT_ERR_EDGE_GAP,start_ms,capture_us);
+     if(!seen_low)return read_bad(DHT_ERR_NO_RESPONSE,start_ms,capture_us);
+diff --git a/Drivers_Device/dht11/dht11.h b/Drivers_Device/dht11/dht11.h
+index 895b1c8..8eaba8f 100644
+--- a/Drivers_Device/dht11/dht11.h
++++ b/Drivers_Device/dht11/dht11.h
+@@ -17,6 +17,9 @@ typedef struct {
+     uint32_t errors[DHT_ERR_COUNT];
+     dht11_error_t last_error;
+     uint32_t start_ms, capture_us, captured_widths, bad_index, bad_width_us;
++    uint32_t irqs;
++    /** @brief Failed attempt's DATA levels; 2 means the stage was not reached. */
++    uint8_t low_level, released_level, end_level;
+ } dht11_debug_t;
+ /** @brief SensorTask-owned last FAILED attempt; success does not erase evidence. */
+ const dht11_debug_t *dht11_debug(void);
+diff --git a/Drivers_Device/sensor.c b/Drivers_Device/sensor.c
+index a31fecb..114f359 100644
+--- a/Drivers_Device/sensor.c
++++ b/Drivers_Device/sensor.c
+@@ -84,9 +84,10 @@ void sensors_log_table(void)
+     {
+         const dht11_debug_t *d=dht11_debug();
+         const cs100a_debug_t *u=cs100a_debug();
+-        LOGI("DHT诊断 最近失败=%u 拉低=%lums 采集=%luus 段=%lu 异常段=%lu/%luus",
++        LOGI("DHT诊断 最近失败=%u 拉低=%lums 采集=%luus 段=%lu 异常段=%lu/%luus 电平=%u/%u/%u IRQ=%lu",
+             (unsigned)d->last_error,(unsigned long)d->start_ms,(unsigned long)d->capture_us,
+-            (unsigned long)d->captured_widths,(unsigned long)d->bad_index,(unsigned long)d->bad_width_us);
++            (unsigned long)d->captured_widths,(unsigned long)d->bad_index,(unsigned long)d->bad_width_us,
++            (unsigned)d->low_level,(unsigned)d->released_level,(unsigned)d->end_level,(unsigned long)d->irqs);
+         LOGI("DHT失败数 拉低超时=%lu 无响应=%lu 缺段=%lu 边沿=%lu 响应宽=%lu 位宽=%lu 校验=%lu 范围=%lu",
+             (unsigned long)d->errors[DHT_ERR_START_LONG],(unsigned long)d->errors[DHT_ERR_NO_RESPONSE],
+             (unsigned long)d->errors[DHT_ERR_INCOMPLETE],(unsigned long)d->errors[DHT_ERR_EDGE_GAP],
+diff --git a/Drivers_Device/tb6612_fan/tb6612_fan.c b/Drivers_Device/tb6612_fan/tb6612_fan.c
+index 0ce9464..3845fe7 100644
+--- a/Drivers_Device/tb6612_fan/tb6612_fan.c
++++ b/Drivers_Device/tb6612_fan/tb6612_fan.c
+@@ -1,4 +1,4 @@
+-/* M0 hardware contract only; no motor driver is implemented or enabled yet.
++/* Shared-pin hardware contract.
+  * A channel must never drive. Never initialize TIM3_CH1/PWMA.
+  * CS=0 also means STBY=0: TB6612 is in standby during SPI transfers.
+  * CS=1: SCK/AIN1 idle low; W25Q releases MISO/PWMA, whose nominal
+@@ -9,3 +9,59 @@
+  * M4/M5 must record full-speed SPI stress and AO1/AO2 differential voltage
+  * or safely observed A-channel shaft motion. The B fan alone cannot verify A.
+  */
++#include "tb6612_fan.h"
++#include "bus_arbiter.h"
++#include "app_config.h"
++#include "bsp_services.h"
++#include "tim.h"
++#include "FreeRTOS.h"
++#include "task.h"
++static volatile unsigned target,current;
++static unsigned applied,origin;
++static uint32_t ramp_started;
++static int held;
++int fan_init(void)
++{
++    target=applied=origin=current=0;
++    {
++        int result=-1;
++        taskENTER_CRITICAL();
++        if(!bsp_is_faulted())result=HAL_TIM_PWM_Start(&FAN_TIM,FAN_CH)==HAL_OK?0:-1;
++        taskEXIT_CRITICAL();return result;
++    }
++}
++int fan_set(unsigned percent)
++{
++    if(percent>100u || __get_IPSR())return -1;
++    taskENTER_CRITICAL();
++    if(bsp_is_faulted()){taskEXIT_CRITICAL();return -1;}
++    target=percent;
++    if(!percent)TIM3->CCR4=0;
++    taskEXIT_CRITICAL();return 0;
++}
++unsigned fan_percent(void){return (current*100u+(FAN_ARR+1u)/2u)/(FAN_ARR+1u);}
++void fan_poll(uint32_t now)
++{
++    unsigned wanted,ccr;uint32_t elapsed;
++    taskENTER_CRITICAL();wanted=bsp_is_faulted()?0:target;taskEXIT_CRITICAL();
++    if(!wanted){
++        if(held){fan_bus_give();held=0;}
++        current=applied=0;return;
++    }
++    if(!held){
++        if(fan_bus_take(APP_ACTUATOR_POLL_MS))return;
++        held=1;current=applied=0;
++    }
++    now=HAL_GetTick();
++    taskENTER_CRITICAL();
++    wanted=bsp_is_faulted()?0:target;
++    if(wanted && wanted!=applied){applied=wanted;origin=current;ramp_started=now;}
++    elapsed=now-ramp_started;if(elapsed>FAN_RAMP_MS)elapsed=FAN_RAMP_MS;
++    ccr=applied*(FAN_ARR+1u)/100u;
++    if(wanted){
++        current=(unsigned)((int32_t)origin+((int32_t)ccr-(int32_t)origin)*(int32_t)elapsed/(int32_t)FAN_RAMP_MS);
++        TIM3->CCR4=current;
++    }
++    taskEXIT_CRITICAL();
++    if(!wanted){fan_bus_give();held=0;current=applied=0;}
++}
+diff --git a/Drivers_Device/w25q64/w25q64.c b/Drivers_Device/w25q64/w25q64.c
+index 6c67c3a..c63d04a 100644
+--- a/Drivers_Device/w25q64/w25q64.c
++++ b/Drivers_Device/w25q64/w25q64.c
+@@ -1,5 +1,6 @@
+ #include "w25q64.h"
+ #include "bus_arbiter.h"
++#include "bsp_services.h"
+ #include "app_config.h"
+ #include "spi.h"
+ #include "FreeRTOS.h"
+@@ -9,14 +10,32 @@ static uint32_t jedec,erases;
+ static int identified;
+ /* W25Q protocol opcodes/status bits. */
+ enum { CMD_ID=0x9f,CMD_READ=3,CMD_PP=2,CMD_ERASE=0x20,CMD_WREN=6,CMD_SR=5,SR_BUSY=1,SR_WEL=2 };
+-static int tx(const void *p,size_t n){return HAL_SPI_Transmit(&hspi1,(uint8_t*)p,(uint16_t)n,APP_FLASH_SPI_TIMEOUT_MS)==HAL_OK?0:-1;}
++/* Higher-priority polling tasks can exhaust the HAL wall-clock timeout. */
++static int tx(const void *p,size_t n)
++{
++    HAL_StatusTypeDef r;
++    vTaskSuspendAll();
++    r=HAL_SPI_Transmit(&hspi1,(uint8_t*)p,(uint16_t)n,APP_FLASH_SPI_TIMEOUT_MS);
++    (void)xTaskResumeAll();
++    return r==HAL_OK?0:-1;
++}
+ static int rx(void *p,size_t n)
+ {
++    HAL_StatusTypeDef r;
+     /* STM32F1 master2-line HAL receive transmits this same buffer as dummy TX. */
+     memset(p,0xff,n);
+-    return HAL_SPI_Receive(&hspi1,p,(uint16_t)n,APP_FLASH_SPI_TIMEOUT_MS)==HAL_OK?0:-1;
++    vTaskSuspendAll();
++    r=HAL_SPI_Receive(&hspi1,p,(uint16_t)n,APP_FLASH_SPI_TIMEOUT_MS);
++    (void)xTaskResumeAll();
++    return r==HAL_OK?0:-1;
++}
++static void select_flash(int active)
++{
++    taskENTER_CRITICAL();
++    HAL_GPIO_WritePin(W25Q_CS_PORT,W25Q_CS_PIN,
++        active || bsp_is_faulted()?GPIO_PIN_RESET:GPIO_PIN_SET);
++    taskEXIT_CRITICAL();
+ }
+-static void select_flash(int active){HAL_GPIO_WritePin(W25Q_CS_PORT,W25Q_CS_PIN,active?GPIO_PIN_RESET:GPIO_PIN_SET);}
+ static int status(uint8_t *s)
+ {uint8_t c=CMD_SR;int r;select_flash(1);r=tx(&c,1);if(!r)r=rx(s,1);select_flash(0);return r;}
+ static int wait_ready(uint32_t limit)
+@@ -45,6 +64,15 @@ int w25q_init(void)
+     return identified?0:-1;
+ }
+ uint32_t w25q_id(void){return jedec;}
++int w25q_probe(uint32_t *id)
++{
++    uint8_t c=CMD_ID,b[3];int r;
++    if(!identified || !id || spi_bus_take(APP_SPI_LOCK_MS))return -1;
++    r=wait_ready(APP_FLASH_PROGRAM_MS);
++    if(!r){select_flash(1);r=tx(&c,1);if(!r)r=rx(b,3);select_flash(0);}
++    if(!r)*id=((uint32_t)b[0]<<16)|((uint32_t)b[1]<<8)|b[2];
++    spi_bus_give();return r;
++}
+ uint32_t w25q_erases(void){return erases;}
+ int w25q_read(uint32_t a,void *p,size_t n)
+ {
+diff --git a/Drivers_Device/w25q64/w25q64.h b/Drivers_Device/w25q64/w25q64.h
+index a39e5c8..8c27d7f 100644
+--- a/Drivers_Device/w25q64/w25q64.h
++++ b/Drivers_Device/w25q64/w25q64.h
+@@ -5,6 +5,8 @@
+ /** @brief Read JEDEC and reject mismatched identity before any mutation. */
+ int w25q_init(void);
+ uint32_t w25q_id(void);
++/** @brief Read a fresh 0x9f transaction (not the cached boot identity). */
++int w25q_probe(uint32_t *id);
+ /** @brief Bounded SPI transactions; every public operation acquires arbiter. */
+ int w25q_read(uint32_t address,void *data,size_t length);
+ /** @brief Program1..256 bytes within ONE page; require erased bytes and verify. */
+diff --git a/MDK-ARM/sms-hub.uvprojx b/MDK-ARM/sms-hub.uvprojx
+index 84762f0..d78cd74 100644
+--- a/MDK-ARM/sms-hub.uvprojx
++++ b/MDK-ARM/sms-hub.uvprojx
+@@ -1,7 +1,10 @@
+-<?xml version='1.0' encoding='utf-8'?>
++<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+ <Project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="project_projx.xsd">
++
+   <SchemaVersion>2.1</SchemaVersion>
++
+   <Header>### uVision Project, (C) Keil Software</Header>
++
+   <Targets>
+     <Target>
+       <TargetName>sms-hub</TargetName>
+@@ -16,28 +19,28 @@
+           <PackID>Keil.STM32F1xx_DFP.2.4.0</PackID>
+           <PackURL>http://www.keil.com/pack/</PackURL>
+           <Cpu>IRAM(0x20000000-0x20004FFF) IROM(0x8000000-0x800FFFF) CLOCK(8000000) CPUTYPE("Cortex-M3")</Cpu>
+-          <FlashUtilSpec />
+-          <StartupFile />
+-          <FlashDriverDll />
+-          <DeviceId />
+-          <RegisterFile />
+-          <MemoryEnv />
+-          <Cmp />
+-          <Asm />
+-          <Linker />
+-          <OHString />
+-          <InfinionOptionDll />
+-          <SLE66CMisc />
+-          <SLE66AMisc />
+-          <SLE66LinkerMisc />
++          <FlashUtilSpec></FlashUtilSpec>
++          <StartupFile></StartupFile>
++          <FlashDriverDll></FlashDriverDll>
++          <DeviceId></DeviceId>
++          <RegisterFile></RegisterFile>
++          <MemoryEnv></MemoryEnv>
++          <Cmp></Cmp>
++          <Asm></Asm>
++          <Linker></Linker>
++          <OHString></OHString>
++          <InfinionOptionDll></InfinionOptionDll>
++          <SLE66CMisc></SLE66CMisc>
++          <SLE66AMisc></SLE66AMisc>
++          <SLE66LinkerMisc></SLE66LinkerMisc>
+           <SFDFile>$$Device:STM32F103C8$SVD\STM32F103xx.svd</SFDFile>
+           <bCustSvd>0</bCustSvd>
+           <UseEnv>0</UseEnv>
+-          <BinPath />
+-          <IncludePath />
+-          <LibPath />
+-          <RegisterFilePath />
+-          <DBRegisterFilePath />
++          <BinPath></BinPath>
++          <IncludePath></IncludePath>
++          <LibPath></LibPath>
++          <RegisterFilePath></RegisterFilePath>
++          <DBRegisterFilePath></DBRegisterFilePath>
+           <TargetStatus>
+             <Error>0</Error>
+             <ExitCodeStop>0</ExitCodeStop>
+@@ -52,15 +55,15 @@
+           <CreateHexFile>1</CreateHexFile>
+           <DebugInformation>1</DebugInformation>
+           <BrowseInformation>1</BrowseInformation>
+-          <ListingPath />
++          <ListingPath></ListingPath>
+           <HexFormatSelection>1</HexFormatSelection>
+           <Merge32K>0</Merge32K>
+           <CreateBatchFile>0</CreateBatchFile>
+           <BeforeCompile>
+             <RunUserProg1>0</RunUserProg1>
+             <RunUserProg2>0</RunUserProg2>
+-            <UserProg1Name />
+-            <UserProg2Name />
++            <UserProg1Name></UserProg1Name>
++            <UserProg2Name></UserProg2Name>
+             <UserProg1Dos16Mode>0</UserProg1Dos16Mode>
+             <UserProg2Dos16Mode>0</UserProg2Dos16Mode>
+             <nStopU1X>0</nStopU1X>
+@@ -69,8 +72,8 @@
+           <BeforeMake>
+             <RunUserProg1>0</RunUserProg1>
+             <RunUserProg2>0</RunUserProg2>
+-            <UserProg1Name />
+-            <UserProg2Name />
++            <UserProg1Name></UserProg1Name>
++            <UserProg2Name></UserProg2Name>
+             <UserProg1Dos16Mode>0</UserProg1Dos16Mode>
+             <UserProg2Dos16Mode>0</UserProg2Dos16Mode>
+             <nStopB1X>0</nStopB1X>
+@@ -79,15 +82,15 @@
+           <AfterMake>
+             <RunUserProg1>0</RunUserProg1>
+             <RunUserProg2>0</RunUserProg2>
+-            <UserProg1Name />
+-            <UserProg2Name />
++            <UserProg1Name></UserProg1Name>
++            <UserProg2Name></UserProg2Name>
+             <UserProg1Dos16Mode>0</UserProg1Dos16Mode>
+             <UserProg2Dos16Mode>0</UserProg2Dos16Mode>
+             <nStopA1X>0</nStopA1X>
+             <nStopA2X>0</nStopA2X>
+           </AfterMake>
+           <SelectedForBatchBuild>0</SelectedForBatchBuild>
+-          <SVCSIdString />
++          <SVCSIdString></SVCSIdString>
+         </TargetCommonOption>
+         <CommonProperty>
+           <UseCPPCompiler>0</UseCPPCompiler>
+@@ -101,8 +104,8 @@
+           <AssembleAssemblyFile>0</AssembleAssemblyFile>
+           <PublicsOnly>0</PublicsOnly>
+           <StopOnExitCode>3</StopOnExitCode>
+-          <CustomArgument />
+-          <IncludeLibraryModules />
++          <CustomArgument></CustomArgument>
++          <IncludeLibraryModules></IncludeLibraryModules>
+           <ComprImg>0</ComprImg>
+         </CommonProperty>
+         <DllOption>
+@@ -111,7 +114,7 @@
+           <SimDlgDll>DCM.DLL</SimDlgDll>
+           <SimDlgDllArguments>-pCM3</SimDlgDllArguments>
+           <TargetDllName>SARMCM3.DLL</TargetDllName>
+-          <TargetDllArguments />
++          <TargetDllArguments></TargetDllArguments>
+           <TargetDlgDll>TCM.DLL</TargetDlgDll>
+           <TargetDlgDllArguments>-pCM3</TargetDlgDllArguments>
+         </DllOption>
+@@ -135,11 +138,11 @@
+           </Flash1>
+           <bUseTDR>1</bUseTDR>
+           <Flash2>BIN\CMSIS_AGDI.dll</Flash2>
+-          <Flash3 />
+-          <Flash4 />
+-          <pFcarmOut />
+-          <pFcarmGrp />
+-          <pFcArmRoot />
++          <Flash3></Flash3>
++          <Flash4></Flash4>
++          <pFcarmOut></pFcarmOut>
++          <pFcarmGrp></pFcarmGrp>
++          <pFcArmRoot></pFcArmRoot>
+           <FcArmLst>0</FcArmLst>
+         </Utilities>
+         <TargetArmAds>
+@@ -172,7 +175,7 @@
+             <RvctClst>0</RvctClst>
+             <GenPPlst>0</GenPPlst>
+             <AdsCpuType>"Cortex-M3"</AdsCpuType>
+-            <RvctDeviceName />
++            <RvctDeviceName></RvctDeviceName>
+             <mOS>0</mOS>
+             <uocRom>0</uocRom>
+             <uocRam>0</uocRam>
+@@ -307,7 +310,7 @@
+                 <Size>0x0</Size>
+               </OCR_RVCT10>
+             </OnChipMemories>
+-            <RvctStartVector />
++            <RvctStartVector></RvctStartVector>
+           </ArmAdsMisc>
+           <Cads>
+             <interw>1</interw>
+@@ -336,7 +339,7 @@
+             <VariousControls>
+               <MiscControls>-Os -ffunction-sections -fdata-sections -std=c99</MiscControls>
+               <Define>USE_HAL_DRIVER,STM32F103xB</Define>
+-              <Undefine />
++              <Undefine></Undefine>
+               <IncludePath>../Inc;../Drivers/STM32F1xx_HAL_Driver/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32F1xx/Include;../Drivers/CMSIS/Include;../BSP;../App;../App/menu;../App/tasks;../Drivers_Device/cs100a;../Drivers_Device/dht11;../Drivers_Device/ec11;../Drivers_Device/eventlog;../Drivers_Device/kvstore;../Drivers_Device/mq_gas;../Drivers_Device/oled_ssd1306;../Drivers_Device/oled_ui;../Drivers_Device/radar_at6010;../Drivers_Device/sg90;../Drivers_Device/tb6612_fan;../Drivers_Device/w25q64;../Middleware/esp8266;../Middleware/filter;../Middleware/json_mini;../Middleware/mqtt_client;../Middleware/FreeRTOS/include;../Middleware/FreeRTOS/portable/ARM_CM3;../Drivers_Device/oled_ui;../Drivers_Device;../Drivers_Device/mcu_internal;../Drivers_Device/radar_rd03</IncludePath>
+             </VariousControls>
+           </Cads>
+@@ -352,10 +355,10 @@
+             <useXO>0</useXO>
+             <ClangAsOpt>1</ClangAsOpt>
+             <VariousControls>
+-              <MiscControls />
+-              <Define />
+-              <Undefine />
+-              <IncludePath />
++              <MiscControls></MiscControls>
++              <Define></Define>
++              <Undefine></Undefine>
++              <IncludePath></IncludePath>
+             </VariousControls>
+           </Aads>
+           <LDads>
+@@ -367,13 +370,13 @@
+             <useFile>0</useFile>
+             <TextAddressRange>0x08000000</TextAddressRange>
+             <DataAddressRange>0x20000000</DataAddressRange>
+-            <pXoBase />
+-            <ScatterFile />
+-            <IncludeLibs />
+-            <IncludeLibsPath />
++            <pXoBase></pXoBase>
++            <ScatterFile></ScatterFile>
++            <IncludeLibs></IncludeLibs>
++            <IncludeLibsPath></IncludeLibsPath>
+             <Misc>--remove</Misc>
+-            <LinkerInputFile />
+-            <DisabledWarnings />
++            <LinkerInputFile></LinkerInputFile>
++            <DisabledWarnings></DisabledWarnings>
+           </LDads>
+         </TargetArmAds>
+       </TargetOption>
+@@ -721,9 +724,6 @@
+             </File>
+           </Files>
+         </Group>
+-        <Group>
+-          <GroupName>::CMSIS</GroupName>
+-        </Group>
+         <Group>
+           <GroupName>M4</GroupName>
+           <Files>
+@@ -754,19 +754,44 @@
+             </File>
+           </Files>
+         </Group>
++        <Group>
++          <GroupName>M5</GroupName>
++          <Files>
++            <File>
++              <FileName>sg90.c</FileName>
++              <FileType>1</FileType>
++              <FilePath>../Drivers_Device/sg90/sg90.c</FilePath>
++            </File>
++            <File>
++              <FileName>tb6612_fan.c</FileName>
++              <FileType>1</FileType>
++              <FilePath>../Drivers_Device/tb6612_fan/tb6612_fan.c</FilePath>
++            </File>
++            <File>
++              <FileName>m5_bench.c</FileName>
++              <FileType>1</FileType>
++              <FilePath>../App/m5_bench.c</FilePath>
++            </File>
++          </Files>
++        </Group>
++        <Group>
++          <GroupName>::CMSIS</GroupName>
++        </Group>
+       </Groups>
+     </Target>
+   </Targets>
++
+   <RTE>
+-    <apis />
++    <apis/>
+     <components>
+       <component Cclass="CMSIS" Cgroup="CORE" Cvendor="ARM" Cversion="4.3.0" condition="CMSIS Core">
+-        <package name="CMSIS" schemaVersion="1.3" url="http://www.keil.com/pack/" vendor="ARM" version="4.5.0" />
++        <package name="CMSIS" schemaVersion="1.3" url="http://www.keil.com/pack/" vendor="ARM" version="4.5.0"/>
+         <targetInfos>
+-          <targetInfo name="sms-hub" />
++          <targetInfo name="sms-hub"/>
+         </targetInfos>
+       </component>
+     </components>
+-    <files />
++    <files/>
+   </RTE>
+-</Project>
+\ No newline at end of file
++
++</Project>
+diff --git a/App/m5_bench.c b/App/m5_bench.c
+new file mode 100644
+index 0000000..9c50388
+--- /dev/null
++++ b/App/m5_bench.c
+@@ -0,0 +1,68 @@
++#include "m5_bench.h"
++#if APP_M5_STRESS_ENABLED
++#include "bsp_services.h"
++#include "tb6612_fan.h"
++#include "storage.h"
++#include "bus_arbiter.h"
++#include "w25q64.h"
++#include "FreeRTOS.h"
++#include "task.h"
++volatile uint32_t m5_bench_request;
++static unsigned mode,phase,passed,failures,id_errors;
++static uint32_t started,previous_seq,run_spi_waits,run_fan_waits;
++static bus_status_t before;
++/* LogTask calls this while holding the complete SPI transaction. */
++void m5_bench_storage_hook(unsigned value)
++{
++    if(value==2u){
++        fan_set(60);
++        /* Force real overlap, without suspending scheduler or interrupts. */
++        vTaskDelay(pdMS_TO_TICKS(40));
++    }
++}
++static void finish(void)
++{
++    bus_status_t after;
++    fan_set(0);fan_poll(HAL_GetTick());bus_status(&after);
++    LOGI("M5 cross mode=%u pass=%u/100 errors=%u jedec_errors=%u spi_waits=%lu fan_waits=%lu",
++        mode,passed,failures,id_errors,(unsigned long)(after.spi_waits-run_spi_waits),(unsigned long)(after.fan_waits-run_fan_waits));
++    mode=phase=0;
++}
++void m5_bench_poll(void)
++{
++    event_record_t event;unsigned count;uint32_t id=0,now=HAL_GetTick();
++    bus_status_t bus;
++    if(m5_bench_request==3u){m5_bench_request=0;if(mode){++failures;finish();}return;}
++    if(!mode){
++        if(m5_bench_request!=1u && m5_bench_request!=2u)return;
++        mode=m5_bench_request;m5_bench_request=0;
++        bus_status(&bus);run_spi_waits=bus.spi_waits;run_fan_waits=bus.fan_waits;
++        passed=failures=id_errors=phase=0;fan_set(0);fan_poll(now);
++    }
++    if(bsp_is_faulted()){++failures;finish();return;}
++    bus_status(&bus);
++    if(!phase){
++        before=bus;started=now;
++        if(storage_recent(0,&event,&count)){++failures;finish();return;}
++        previous_seq=event.seq;
++        if(mode==1u){if(fan_set(60)){++failures;finish();return;}phase=1;}
++        else if(!storage_event(EVENT_BUS_TEST,(int32_t)passed+1,2))phase=3;
++        else {++failures;finish();return;}
++    }else if(now-started>5000u){++failures;finish();return;}
++    else if(phase==1u && fan_percent()==60u){
++        before=bus;
++        if(storage_event(EVENT_BUS_TEST,(int32_t)passed+1,1)){++failures;finish();return;}
++        phase=2;
++    }else if(phase==2u && bus.spi_waits>before.spi_waits){
++        fan_set(0);fan_poll(now);phase=4;
++    }else if(phase==3u && fan_percent()==60u){
++        if(bus.fan_waits==before.fan_waits){++failures;finish();return;}
++        fan_set(0);fan_poll(now);phase=4;
++    }else if(phase==4u && !storage_recent(0,&event,&count) &&
++        (int32_t)(event.seq-previous_seq)>0 && event.type==EVENT_BUS_TEST &&
++        event.parameter==(int32_t)passed+1 && event.auxiliary==(int32_t)mode){
++        if(w25q_probe(&id) || id!=W25Q_JEDEC_ID){++id_errors;++failures;finish();return;}
++        if(++passed==APP_M5_STRESS_CYCLES)finish();else phase=0;
++    }
++}
++#endif
+diff --git a/App/m5_bench.h b/App/m5_bench.h
+new file mode 100644
+index 0000000..656fe15
+--- /dev/null
++++ b/App/m5_bench.h
+@@ -0,0 +1,10 @@
++#ifndef M5_BENCH_H
++#define M5_BENCH_H
++#include "app_config.h"
++#if APP_M5_STRESS_ENABLED
++/** @brief Bench-only debugger commands: 1=fan->log, 2=Flash->fan, 3=abort. */
++extern volatile uint32_t m5_bench_request;
++void m5_bench_poll(void);
++void m5_bench_storage_hook(unsigned mode);
++#endif
++#endif
+diff --git a/Docs/M5-acceptance.md b/Docs/M5-acceptance.md
+new file mode 100644
+index 0000000..9706384
+--- /dev/null
++++ b/Docs/M5-acceptance.md
+@@ -0,0 +1,150 @@
++# M5 执行器与总线仲裁验收
++
++日期：2026-10-11。版本为 `0.6.0-dev`，尚未创建发布 tag。
++软件、主机模型和两种 Keil 构建通过；本文中的预期波形不是实测截图。
++当前仓库仅有 v0.2/v0.3，M4 保存复位和真实掉电验收尚未完成，v0.5 依赖未发布。
++
++## 交付与资源增量
++
++| 构建 | Code | RO | RW | ZI | Flash=Code+RO+RW | RAM=RW+ZI |
++|---|---:|---:|---:|---:|---:|---:|
++| M5前基线，已含DHT/Flash修复 | 49408 | 4644 | 112 | 19376 | 54164B | 19488B |
++| M5普通 | 51972 | 4676 | 136 | 19512 | 56784B | 19648B |
++| M5压测 | 52980 | 4760 | 136 | 19560 | 57876B | 19696B |
++
++普通增量 **Flash +2620B，RAM +160B**；普通剩余4656B/832B。
++压测相对同一基线增量3712B/208B，剩余3564B/784B。均小于61440B/20480B预算。
++未新增RTOS任务、队列、互斥锁或软件定时器；沿用AlarmTask及10ms controls定时器。
++RTOS heap已计入RAM；M5实物堆/栈水位仍需从运行日志核对，不能沿用基线824B当成新测量。
++调用图已保存：普通最大静态栈472B，controls_tick路径216B；工具另标有未知递归/函数指针路径，不能替代实物水位。
++
++| 文件 | 用途 | SHA256 |
++|---|---|---|
++| MDK-ARM/Objects/sms-hub.hex，另存Docs/M5-normal.hex | 普通，压测宏0 | CB111A659DF7FD92A5A6EA973F2976917556062022A4A9A836476AA103B6C1FB |
++| Docs/M5-stress.hex | 压测宏1，不作为发布固件 | 97CCE9CCF822EB93B3E956E4AF86E6156EE92107FBC544F6D894EAA3C112221D |
++| Docs/M5-build.log、M5-map.txt | 普通0错误0警告与大小证据 | |
++| Docs/M5-stress-build.log、M5-stress-map.txt | 压测0错误0警告与大小证据 | |
++| Docs/M5-tests.log | 主机回归与模拟统计 | |
++| Docs/M5-manual-host.png | 实际帧缓冲渲染，非OLED照片/测距实测 | |
++| Docs/M5-delta.patch | 相对93c3556的工作区代码增量，详见M5-delta.md | |
++
++普通构建：`& .\Docs\build.ps1 -Stage M5`。
++压测重建时，先将App/app_config.h中APP_M5_STRESS_ENABLED改为1，执行
++`& .\Docs\build.ps1 -Stage M5-stress`，归档HEX后恢复0并重建普通版本。
++脚本拒绝宏与阶段不匹配，也检查Flash/RAM预算。当前已恢复0，Objects内为普通固件。
++
++## 已实现行为
++
++- SG90：PA8/TIM1_CH1，PSC71/ARR19999，20ms周期；CCR按
++  `500 + round(2000 * angle / 180)`计算，0/90/180分别500/1500/2500us。
++  servo_write只更新0..180目标；现有软件定时器每至少50ms最多移动1度，晚回调不追赶跳角。
++  0→180约9秒或更慢。启动GPIO先低，初始化后输出0度脉冲；
++  本地HAL_TIM_PWM_Start实际包含TIM1 MOE使能，非仅依靠模拟桩。
++- fan_set接受0..100，非阻塞提交；AlarmTask拥有风扇总线锁。
++  take成功后先CCR0并刷新预装载，再配置PA5/PA7推挽、PA6输入；
++  BIN2/PB13=0、BIN1/PA7=1，最后STBY/PA4=1。
++  PB1/TIM3_CH4的20kHz PWM以1秒从当前CCR线性到目标，100%=CCR3600。
++  运行中改目标重新开始1秒斜坡；零目标立即CCR0，下一轮AlarmTask完成
++  STBY0→引脚恢复SPI复用→give。等待拿锁期间的零目标会取消启动。
++- 使用同一个优先级继承mutex，SPI同任务嵌套允许，SPI/FAN跨模式嵌套拒绝。
++  风扇运行期间不轮流抢占SPI；日志请求保持在4项队列内等待停止。
++  LogTask每次最多等待100ms并保持心跳，未出队时的竞争不会让存储离线。
++  队列满仍明确返回失败/增加dropped；不能无限缓存持续运行时的事件。
++  真正的SPI超时、写入结果未知、CRC/读回失败仍进入停止写入状态，禁止盲目重试。
++- 急停永久锁定到复位：风扇CCR0/STBY0、SPI禁用、蜂鸣器停、RGB熄灭、
++  舵机MOE禁用。Flash后续取消片选不能把共享PA4/STBY重新拉高。
++  急停不承诺机械舵机立刻回零；复位后重新发送0度，位置需实物观察。
++- A通道不初始化PWMA/TIM3_CH1，PB0保持输入、PA6保持输入。
++  PA6仍同接MISO/PWMA；不初始化PWMA不能证明物理A通道永久禁能。
++  继续遵循已确认的共享接线方案，必须测A输出差分瞬态。
++  若严格要求硬件永久禁能，应隔离TB6612的PWMA与PA6连接并将PWMA固定低，
++  保留W25Q MISO与PA6连接；不能直接把共享PA6配置为输出低。
++
++## 灯效/蜂鸣时序
++
++所有灯效与蜂鸣复用10ms软件定时器，无延时、打印、拿总线锁或内存分配。
++effect_set替换当前灯效并取消排队蜂鸣；风扇/舵机原语独立，不在本阶段加入自动报警判定。
++
++| 原语 | 灯 | 蜂鸣 |
++|---|---|---|
++| EFFECT_FIRE | 红，250ms亮/250ms灭，2Hz | 100ms响/100ms停 |
++| EFFECT_INTRUSION | 紫，500ms亮/500ms灭 | 1500ms响/500ms停 |
++| EFFECT_AIR | 黄常亮 | 停 |
++| EFFECT_FAULT | 黄，500ms亮/500ms灭 | 停 |
++| EFFECT_NETWORK | 绿，1秒升/1秒降三角呼吸 | 停 |
++| EFFECT_STANDBY | 熄灭 | 停 |
++
++## Manual Test
++
++进入Manual Test后，KEY1单击下一项、长按上一项；PB15确认/切换编辑，PC13返回。
++Fan %和Servo deg显示Set/Out及滑杆，编辑时KEY1单击+1、长按-1，边界0..100/0..180。
++Out表示软件输出指令，未安装角度/转速反馈，不代表实测位置或转速。
++Distance每个显示帧读取DataHub，故障显示FAULT，过期显示STALE。
++其后可测试Fire/Intrusion/Air/Fault/Network/Standby、Beep、RGB三色、I2C Scan和字体。
++退出Manual Test请求风扇停、舵机缓慢回0、灯/蜂鸣停；急停使用bsp_emergency_stop，
++不可用普通退出操作替代紧急切断。
++
++## 双向各100次实板压测命令
++
++使用专用压测HEX及匹配的tmp/M5-stress.axf符号，调试器Watch修改变量：
++
++```c
++m5_bench_request = 1;  /* 风扇运行中写日志，100轮 */
++m5_bench_request = 2;  /* Flash事务中请求启动风扇，100轮 */
++m5_bench_request = 3;  /* 中止当前测试，停止风扇 */
++```
++
++这是沿用M4的调试器命令，不是UART字符串命令；USART3继续归ESP8266。
++等待“存储就绪”再执行；退出Manual Test，运行时不要同时发手动执行器/日志命令。
++测试只追加EVENT_BUS_TEST，不修改KV配置；追加200条事件可能按既有环形策略淘汰最旧记录。
++单方向通常超过100秒，轮内5秒超时会失败停止。
++
++模式1：风扇升到60%→排队专用事件→确认SPI至少等待一次→停风扇/归还→
++检查新序号、事件参数和模式匹配→真实0x9F读取JEDEC。
++模式2：LogTask已拥有完整SPI事务时提交60%风扇目标，并**注入40ms可调度窗口**
++以强制AlarmTask竞争；随后完成实际日志写入/读回→风扇获锁/缓启→停机→新读JEDEC。
++两种模式逐轮检查竞争证据，未发生竞争不能算通过。JEDEC期望0xEF4017，读的不是启动缓存。
++错误或中止请求停止风扇并输出统计；复位/HardFault导致没有完整统计时视为失败。
++
++最终应出现（等待次数取实测值，每次命令单独累计）：
++
++```text
++M5 cross mode=1 pass=100/100 errors=0 jedec_errors=0 spi_waits=<至少100> fan_waits=<实测>
++M5 cross mode=2 pass=100/100 errors=0 jedec_errors=0 spi_waits=<实测> fan_waits=<至少100>
++```
++
++主机状态机已得到mode1等待100次、mode2等待400次、各100/100且JEDEC错误0；
++主机实际arbiter/W25Q边界模型另有两方向100/100及fresh JEDEC200/200。
++这些数据仅是软件模型。实板还须确认没有误转、异常复位/HardFault，并归档串口完整统计。
++
++## PA4/PA7及PWM截图要求
++
++共同接地，探头接PA4(CS/STBY)、PA7(MOSI/BIN1)、PA5(SCK)、PB1(PWMB)；
++另测PB13(BIN2)、PA8(servo)、PB5(buzzer)。9MHz SPI建议100MS/s以上采样；
++SPI解码Mode0/MSB，保留时基、采样率、电压刻度、触发沿、日期及测试命令。
++截图至少包括以下四组，不用软件绘图替代：
++
++| 截图 | 触发/时基 | 应看到的波形 |
++|---|---|---|
++| 上电/复位/急停后复位 | 电源或NRST，覆盖启动全过程并另放大PA8 | PA4低、PB1无非零占空比、PB5低；PA8先低，再20ms周期/500us高脉冲；无开机RGB自检/蜂鸣 |
++| 风扇启动和缓启 | PA4上升沿；另取1秒窗口和50us周期放大 | PA5停止时钟；PB13低；PA7先成为稳定高，再PA4高；PB1先0，随后20kHz占空比连续升到命令值 |
++| 风扇停止/日志接续 | PA4下降沿，放大切换并保留后续SPI包 | CCR归零后STBY低；PA7先低再恢复SPI复用；之后Flash包PA4低期间有SCK/MOSI，PB1保持0；每次片选结束PA4可短暂高，不能出现风扇PWM |
++| Flash中请求风扇 | 覆盖整个模式2事务及后续缓启 | Flash有效包没有被风扇抢断；PA4低时完成SPI，写入BUSY轮询允许多个片选脉冲；事务释放后才出现PA7稳定高/PA4高和PB1斜坡 |
++
++SPI的片选高电平同时使TB6612 STBY高，因此**额外测AO1-AO2差分**
++及PA6释放瞬态；B风扇没转不能证明A通道安全。用差分探头，或两路对共同GND的探头作CH1-CH2；
++不要把示波器地夹接到电桥输出。应看不到A通道驱动脉冲/轴运动；出现驱动即不能通过DoD③。
++同时检查GPIO交接对DHT/超声IRQ的延迟和采样成功率，不能用主机测试推断实板中断时序。
++
++## 待完成的实物DoD与发布
++
++1. 独立且足够的舵机/电机电源，MCU/驱动/传感器共地；核对模块朝向及逻辑电源。
++   0/90/180分别稳态测角，记录≤2°与有无抖动/异响。500/1500/2500us映射通过不等于机械精度通过；
++   保留bsp_pin.h脉宽参数用于实测校准。
++2. 风扇0..100阶梯与往返；示波器确认20kHz/50us周期/斜坡，听检无可闻啸叫。
++   低占空比不转可能来自电机启动转矩，软件线性PWM不等于线性转速。
++3. 归档两方向各100次完整统计、上述截图、A输出瞬态及无HardFault/误转观察。
++4. 风扇/蜂鸣/舵机运行时分别急停和断电重启，确认故障后不重新开启、上电风扇停/蜂鸣停/舵机归0。
++   软件只能控制启动后的引脚；上电到CPU运行前的电平及舵机供电瞬态也要实测。
++5. 完成M4保存复位/真实掉电验收并发布v0.5，再以普通宏0固件完成M5物理验收和v0.6发布。
++   当前没有虚构v0.5/v0.6标签，没有烧录或声称实物DoD通过。
+diff --git a/Docs/M5-delta.md b/Docs/M5-delta.md
+new file mode 100644
+index 0000000..4508d0e
+--- /dev/null
++++ b/Docs/M5-delta.md
+@@ -0,0 +1,21 @@
++# M5增量说明
++
++M5普通固件相对本轮开始时的DHT/Flash修复基线：Flash +2620B，RAM +160B。
++完整资源与验收见M5-acceptance.md。
++
++M5-delta.patch以仓库当前HEAD `93c3556` 为基点，包含当前工作区相关代码增量和新文件，
++不是针对尚不存在的v0.5生成的发布补丁。它含有本轮之前未提交的DHT/Flash修复及Keil工程调整，
++用于保留可审阅的当前源码状态；不包含用户模块ZIP、PDF、照片、另一个sms-hub目录或调试器选项。
++当前工作区已经应用这些改动，不要重复套用补丁。
++
++M5修改范围：
++
++- BSP/bus_arbiter：同一mutex的SPI/FAN模式、SPI嵌套、竞争计数及安全切换。
++- App/storage：出队前等待完整事务所有权；忙不离线，异常仍停止写入。
++- Drivers_Device/sg90、tb6612_fan：舵机目标限速、风扇缓启/改速/取消/停止。
++- BSP/bsp_controls、bsp_board、bsp_services：复用软件定时器的灯效、蜂鸣、安全上电/急停。
++- Drivers_Device/w25q64：新读JEDEC接口、故障态片选保护，保留已有短SPI暂停调度修复。
++- App/tasks、menu、m5_bench、app_config：复用AlarmTask、滑杆/实时距离、两种100次压测。
++- MDK-ARM/sms-hub.uvprojx、Docs/build.ps1、相关主机测试：编译接入、预算检查与回归。
++
++发布仍等待实际v0.5依赖与M5实物DoD；普通代码版本标识保留0.6.0-dev，未创建发布tag。
+diff --git a/Docs/test_dht_handshake.py b/Docs/test_dht_handshake.py
+new file mode 100644
+index 0000000..1244d74
+--- /dev/null
++++ b/Docs/test_dht_handshake.py
+@@ -0,0 +1,217 @@
++"""Exercise actual DHT driver with an open-drain bus and timed EXTI events."""
++from pathlib import Path
++import os
++import subprocess
++
++ROOT = Path(__file__).resolve().parents[1]
++OUT = ROOT / 'tmp/dht-handshake'
++OUT.mkdir(parents=True, exist_ok=True)
++
++(OUT / 'stm32f1xx_hal.h').write_text(r'''
++#ifndef TEST_HAL_H
++#define TEST_HAL_H
++#include <stdint.h>
++#include <stddef.h>
++typedef struct {uint32_t IDR,ODR;} GPIO_TypeDef;
++typedef struct {int unused;} TIM_HandleTypeDef;
++typedef struct {uint32_t Pin,Mode,Pull,Speed;} GPIO_InitTypeDef;
++extern GPIO_TypeDef gpio_a,gpio_b,gpio_c;
++typedef struct {uint32_t IMR,PR;} EXTI_TypeDef;
++extern EXTI_TypeDef exti;
++#define EXTI (&exti)
++#define GPIOA (&gpio_a)
++#define GPIOB (&gpio_b)
++#define GPIOC (&gpio_c)
++#define GPIO_PIN_RESET 0u
++#define GPIO_PIN_SET 1u
++#define GPIO_MODE_INPUT 0u
++#define GPIO_MODE_OUTPUT_OD 1u
++#define GPIO_MODE_IT_RISING_FALLING 2u
++#define GPIO_PULLUP 1u
++#define GPIO_SPEED_FREQ_LOW 0u
++#define __HAL_GPIO_EXTI_CLEAR_IT(p) (EXTI->PR&=~(p))
++uint32_t HAL_GetTick(void);
++unsigned HAL_GPIO_ReadPin(GPIO_TypeDef *,unsigned);
++void HAL_GPIO_WritePin(GPIO_TypeDef *,unsigned,unsigned);
++void HAL_GPIO_Init(GPIO_TypeDef *,GPIO_InitTypeDef *);
++''' + ''.join(f'#define GPIO_PIN_{i} (1u<<{i})\n' for i in range(16)) + '#endif\n')
++(OUT / 'FreeRTOS.h').write_text(r'''
++#ifndef TEST_FREERTOS_H
++#define TEST_FREERTOS_H
++#define pdMS_TO_TICKS(x) (x)
++void enter_critical(void);
++void exit_critical(void);
++#define taskENTER_CRITICAL() enter_critical()
++#define taskEXIT_CRITICAL() exit_critical()
++#endif
++''')
++(OUT / 'task.h').write_text('void vTaskDelay(unsigned ticks);\n')
++(OUT / 'handshake.c').write_text(r'''
++#include <assert.h>
++#include <stdio.h>
++#include <string.h>
++#include "app_config.h"
++#include "dht11.h"
++GPIO_TypeDef gpio_a,gpio_b,gpio_c;
++EXTI_TypeDef exti;
++static uint64_t clock_us=2000000,low_since,event_at;
++static unsigned mode,host_low,sensor_low,connected=1,critical,exti_configured;
++static unsigned response_delay=13,setup_stall,event_index,event_count,releases;
++static unsigned stuck_low,irq_blocked,stretch_start;
++static uint16_t frame[DHT11_CAPTURE_WIDTHS];
++uint32_t HAL_GetTick(void){return (uint32_t)(clock_us/1000u);}
++uint32_t bsp_micros(void){return (uint32_t)clock_us;}
++unsigned HAL_GPIO_ReadPin(GPIO_TypeDef *p,unsigned pin){return !!(p->IDR&pin);}
++static void dispatch(void)
++{
++    if(!critical && !irq_blocked && (EXTI->IMR&EXTI->PR&DHT11_PIN)){
++        __HAL_GPIO_EXTI_CLEAR_IT(DHT11_PIN);
++        dht11_edge_irq();
++    }
++}
++static void update_bus(void)
++{
++    unsigned was=!!(gpio_b.IDR&DHT11_PIN);
++    if(host_low || sensor_low || stuck_low)gpio_b.IDR&=~DHT11_PIN;
++    else gpio_b.IDR|=DHT11_PIN; /* Module's external 10k pull-up. */
++    if(was!=!!(gpio_b.IDR&DHT11_PIN) && exti_configured)EXTI->PR|=DHT11_PIN;
++    dispatch();
++}
++static void update_host(void)
++{
++    unsigned next=mode==GPIO_MODE_OUTPUT_OD && !(gpio_b.ODR&DHT11_PIN);
++    if(next && !host_low)low_since=clock_us;
++    if(!next && host_low){
++        uint64_t duration=clock_us-low_since;
++        if(connected && duration>=18000u && duration<=30000u){
++            ++releases;event_index=0;event_count=84;event_at=clock_us+response_delay;
++        }
++    }
++    host_low=next;update_bus();
++}
++static void advance(unsigned us)
++{
++    uint64_t target=clock_us+us;
++    while(event_count && event_at<=target){
++        clock_us=event_at;sensor_low^=1u;update_bus();
++        if(event_index<82u)event_at+=frame[event_index];
++        else event_at+=54u;
++        ++event_index;--event_count;
++    }
++    clock_us=target;dispatch();
++}
++void enter_critical(void){++critical;}
++void exit_critical(void){assert(critical);--critical;dispatch();}
++void HAL_GPIO_WritePin(GPIO_TypeDef *p,unsigned pin,unsigned v)
++{
++    assert(p==GPIOB && pin==4096u);
++    if(v)p->ODR|=pin;else p->ODR&=~pin;
++    update_host();
++}
++void HAL_GPIO_Init(GPIO_TypeDef *p,GPIO_InitTypeDef *g)
++{
++    assert(p==GPIOB && g->Pin==4096u);
++    /* F1 HAL sets ODR high BEFORE mode/AFIO/EXTI when configuring input pull-up. */
++    if(g->Mode!=GPIO_MODE_OUTPUT_OD && g->Pull==GPIO_PULLUP){
++        p->ODR|=g->Pin;update_host();
++        if(g->Mode==GPIO_MODE_IT_RISING_FALLING)advance(setup_stall);
++    }
++    mode=g->Mode;update_host();
++    if(g->Mode==GPIO_MODE_IT_RISING_FALLING){
++        exti_configured=1;EXTI->IMR|=g->Pin;
++    }
++    dispatch();
++}
++void vTaskDelay(unsigned ticks)
++{
++    assert(!critical);
++    if(stretch_start && ticks>1u)ticks+=20u;
++    advance(ticks*1000u);
++}
++static void make_frame(void)
++{
++    const uint8_t bytes[5]={55,0,26,0,81};unsigned i;
++    frame[0]=83;frame[1]=87;
++    for(i=0;i<40;i++){
++        frame[2+2*i]=54;
++        frame[3+2*i]=(bytes[i/8]&(0x80u>>(i%8)))?71:24;
++    }
++}
++static void read_good(void)
++{
++    sensor_value_t v={0};int result=dht11_read(SENSOR_DHT11,&v);
++    if(result)fprintf(stderr,"DHT handshake failed: response=%uus setup stall=%uus error=%u widths=%lu\n",
++        response_delay,setup_stall,(unsigned)dht11_debug()->last_error,
++        (unsigned long)dht11_debug()->captured_widths);
++    assert(result==0);
++    assert(v.value==260 && v.auxiliary==550 && v.quality==SENSOR_GOOD);
++    assert(v.auxiliary_quality==SENSOR_GOOD && v.timestamp==HAL_GetTick());
++    assert(!critical && !host_low && !(EXTI->IMR&DHT11_PIN));
++    assert(gpio_b.IDR&DHT11_PIN);
++}
++static void read_missing(unsigned release_level,unsigned irqs)
++{
++    uint64_t before=clock_us;sensor_value_t v={0};
++    v.value=-999;v.timestamp=123;
++    assert(dht11_read(SENSOR_DHT11,&v)==-1);
++    assert(clock_us-before>=27000u && clock_us-before<40000u);
++    assert(v.value==-999 && v.timestamp==123); /* Failure cannot publish fabricated data. */
++    assert(!critical && !host_low && !(EXTI->IMR&DHT11_PIN));
++    assert(dht11_debug()->last_error==DHT_ERR_NO_RESPONSE);
++    assert(dht11_debug()->captured_widths==0);
++    assert(dht11_debug()->low_level==0);
++    assert(dht11_debug()->released_level==release_level);
++    assert(dht11_debug()->end_level==release_level);
++    assert(dht11_debug()->irqs==irqs);
++}
++int main(void)
++{
++    unsigned i;sensor_value_t v={0};dht11_debug_t failed;
++    assert(DHT11_PORT==GPIOB && DHT11_PIN==4096u);
++    make_frame();dht11_init(SENSOR_DHT11);read_good();assert(releases==1);
++    puts("PASS DHT handshake: physical low/release triggers a complete validated frame");
++    advance(DHT11_PERIOD_MS*1000u);
++    /* Inject setup latency, not a measured board duration. Earliest legal response=10us. */
++    response_delay=10;setup_stall=16;dht11_init(SENSOR_DHT11);
++    read_good();assert(releases==2);
++    puts("PASS DHT early response: interrupt setup latency cannot discard the first falling edge");
++    advance(DHT11_PERIOD_MS*1000u);connected=0;read_missing(1,1);
++    puts("PASS DHT unplug: released line high, release IRQ only, bounded NO_RESPONSE");
++    advance(DHT11_PERIOD_MS*1000u);stuck_low=1;update_bus();read_missing(0,0);
++    puts("PASS DHT stuck-low: release stays low, no IRQ, safe input restored");
++    stuck_low=0;update_bus();advance(DHT11_PERIOD_MS*1000u);
++    irq_blocked=1;read_missing(1,0);irq_blocked=0;
++    puts("PASS DHT missing IRQ: released line high, pending edges, zero callbacks");
++    failed=*dht11_debug();connected=1;advance(DHT11_PERIOD_MS*1000u);read_good();
++    assert(!memcmp(&failed,dht11_debug(),sizeof(failed)));
++    puts("PASS DHT reconnect: fresh valid reading, last failure evidence retained");
++    advance(DHT11_PERIOD_MS*1000u);stretch_start=1;
++    assert(dht11_read(SENSOR_DHT11,&v)==-1);stretch_start=0;
++    assert(dht11_debug()->last_error==DHT_ERR_START_LONG);
++    assert(dht11_debug()->start_ms>30u && dht11_debug()->released_level==2u);
++    assert(!critical && !host_low && mode==GPIO_MODE_INPUT && !(EXTI->IMR&DHT11_PIN));
++    advance(DHT11_PERIOD_MS*1000u);read_good();
++    puts("PASS DHT excessive start: bounded failure, bus released, next read recovers");
++    for(i=0;i<3;i++){
++        const unsigned delays[]={10,13,35};
++        advance(DHT11_PERIOD_MS*1000u);response_delay=delays[i];
++        EXTI->PR|=DHT11_PIN|GPIO_PIN_13;EXTI->IMR|=GPIO_PIN_13;
++        read_good();assert(EXTI->PR&GPIO_PIN_13);assert(EXTI->IMR&GPIO_PIN_13);
++    }
++    puts("PASS DHT datasheet response limits: 10/13/35us, stale PR cleared, other EXTI lines retained");
++    clock_us=0xffffffffu-21500u;read_good();
++    puts("PASS DHT capture across uint32 microsecond wrap");
++    return 0;
++}
++''', encoding='utf-8')
++
++env = dict(os.environ)
++env['PATH'] = 'D:/msys64/ucrt64/bin;' + env['PATH']
++args = ['D:/msys64/ucrt64/bin/gcc.exe', '-std=c99', '-Wall', '-Wextra', '-Werror']
++for directory in ['tmp/dht-handshake', 'App', 'BSP', 'Drivers_Device',
++                  'Drivers_Device/dht11', 'Middleware/filter']:
++    args += ['-I', directory]
++args += ['tmp/dht-handshake/handshake.c', 'Drivers_Device/dht11/dht11.c',
++         'Middleware/filter/sensor_filter.c', '-o', 'tmp/dht-handshake/handshake.exe']
++subprocess.run(args, cwd=ROOT, env=env, check=True)
++subprocess.run([str(OUT / 'handshake.exe')], cwd=ROOT, env=env, check=True)
+diff --git a/Docs/test_m5.py b/Docs/test_m5.py
+new file mode 100644
+index 0000000..93ad329
+--- /dev/null
++++ b/Docs/test_m5.py
+@@ -0,0 +1,227 @@
++"""Compile actual M5 drivers and controls against deterministic peripheral boundaries."""
++from pathlib import Path
++import os
++import subprocess
++
++root = Path(__file__).resolve().parents[1]
++out = root / "tmp/m5-test"
++out.mkdir(parents=True, exist_ok=True)
++env = dict(os.environ)
++env["PATH"] = "D:/msys64/ucrt64/bin;" + env["PATH"]
++hal = r"""
++#ifndef M5_HAL
++#define M5_HAL
++#include <stdint.h>
++typedef struct {uint32_t CCR1,CCR4,BDTR;} Timer;
++typedef struct {Timer *Instance;} TIM_HandleTypeDef;
++extern Timer tim1,tim3;
++#define TIM1 (&tim1)
++#define TIM3 (&tim3)
++#define TIM_CHANNEL_1 1
++#define TIM_CHANNEL_4 4
++#define TIM_BDTR_MOE 0x8000u
++#define HAL_OK 0
++#define __HAL_TIM_SET_COMPARE(t,c,v) ((void)(c),(t)->Instance->CCR1=(v))
++uint32_t HAL_GetTick(void);
++unsigned __get_IPSR(void);
++int HAL_TIM_PWM_Start(TIM_HandleTypeDef *,unsigned);
++#endif
++"""
++(out / "stm32f1xx_hal.h").write_text(hal)
++(out / "tim.h").write_text('#include "stm32f1xx_hal.h"\nextern TIM_HandleTypeDef htim1,htim3;\nvoid MX_TIM1_Init(void);\n')
++(out / "FreeRTOS.h").write_text('#include <assert.h>\n#define pdMS_TO_TICKS(x) (x)\n#define taskENTER_CRITICAL() ((void)0)\n#define taskEXIT_CRITICAL() ((void)0)\n')
++(out / "task.h").write_text("void vTaskDelay(unsigned);\n")
++test = r"""
++#include <assert.h>
++#include <stdio.h>
++#include "app_config.h"
++#include "sg90.h"
++#include "tb6612_fan.h"
++Timer tim1,tim3;TIM_HandleTypeDef htim1={&tim1},htim3={&tim3};
++static uint32_t now;static unsigned fault,irq,busy,held,starts,stops,waits;
++uint32_t HAL_GetTick(void){return now;}
++unsigned __get_IPSR(void){return irq;}
++int bsp_is_faulted(void){return fault;}
++void MX_TIM1_Init(void){tim1.CCR1=SERVO_CCR_MIN;}
++int HAL_TIM_PWM_Start(TIM_HandleTypeDef *t,unsigned c){
++ if(t==&htim1){assert(c==SERVO_CH);t->Instance->BDTR|=SERVO_MOE_MASK;}
++ else assert(t==&htim3&&c==FAN_CH&&tim3.CCR4==0);
++ return 0;
++}
++int fan_bus_take(uint32_t ms){assert(ms<=10);if(busy){++waits;return -1;}assert(!held&&tim3.CCR4==0);held=1;++starts;return 0;}
++void fan_bus_give(void){assert(held);tim3.CCR4=0;held=0;++stops;}
++static void tick(unsigned ms){now+=ms;servo_poll(now);fan_poll(now);}
++int main(void){
++ unsigned i,previous;
++ assert(!servo_init()&&!fan_init());assert(tim1.CCR1==500&&(tim1.BDTR&SERVO_MOE_MASK)&&!tim3.CCR4);
++ assert(servo_write(181)==-1&&fan_set(101)==-1);
++ assert(!servo_write(180));tick(49);assert(!servo_angle());tick(1);assert(servo_angle()==1);
++ for(i=1;i<90;i++){tick(50);}assert(servo_angle()==90&&tim1.CCR1==1500);
++ for(i=90;i<180;i++){tick(50);}assert(servo_angle()==180&&tim1.CCR1==2500);
++ assert(!servo_write(0));tick(1000);assert(servo_angle()==179); /* late callback must not jump */
++ for(i=179;i>0;i--){tick(50);}assert(!servo_angle()&&tim1.CCR1==500);
++ now=UINT32_MAX-24;servo_poll(now);assert(!servo_write(1));tick(49);assert(!servo_angle());tick(1);assert(servo_angle()==1);
++ busy=1;assert(!fan_set(100));tick(10);assert(waits==1&&!held&&!tim3.CCR4);
++ assert(!fan_set(0));busy=0;tick(10);assert(!held&&starts==0);
++ assert(!fan_set(100));tick(10);assert(held&&tim3.CCR4==0);
++ for(i=0;i<100;i++){previous=tim3.CCR4;tick(10);assert(tim3.CCR4>=previous&&tim3.CCR4-previous<=36);}
++ assert(fan_percent()==100&&tim3.CCR4==3600);
++ assert(!fan_set(45));tick(10);tick(500);assert(tim3.CCR4==2610);tick(500);assert(fan_percent()==45&&tim3.CCR4==1620);
++ assert(!fan_set(0));assert(!tim3.CCR4);tick(10);assert(!held&&stops==1&&!fan_percent());
++ now=UINT32_MAX-20;assert(!fan_set(60));tick(10);tick(500);assert(tim3.CCR4==1080);tick(500);assert(fan_percent()==60);
++ fault=1;tim1.BDTR=0;tim3.CCR4=0;assert(servo_write(90)==-1&&fan_set(100)==-1);tick(10);
++ assert(!held&&!tim3.CCR4&&!tim1.BDTR);fault=0;irq=1;assert(servo_write(10)==-1&&fan_set(10)==-1);
++ puts("PASS actual SG90/fan: endpoints/MOE, 50ms/degree/no catchup, 1s ramps/re-target/stop, contention cancellation, tick wrap, fault/ISR");
++ return 0;
++}
++"""
++(out / "test.c").write_text(test)
++includes = ["tmp/m5-test", "BSP", "App", "Drivers_Device/sg90", "Drivers_Device/tb6612_fan"]
++args = ["D:/msys64/ucrt64/bin/gcc.exe", "-std=c99", "-Wall", "-Wextra", "-Werror"]
++for directory in includes:
++    args += ["-I", directory]
++subprocess.run(args + ["tmp/m5-test/test.c", "Drivers_Device/sg90/sg90.c",
++                      "Drivers_Device/tb6612_fan/tb6612_fan.c", "-o", "tmp/m5-test/test.exe"],
++               cwd=root, env=env, check=True)
++subprocess.run([str(out / "test.exe")], cwd=root, env=env, check=True)
++# controls.c's existing single-TU simulation supplies its own HAL/RTOS boundary.
++control_includes = ["BSP", "App", "Inc", "Drivers_Device", "Middleware/FreeRTOS/include",
++                    "Drivers_Device/dht11", "Drivers_Device/cs100a",
++                    "Drivers_Device/sg90", "Drivers_Device/tb6612_fan",
++                    "Drivers/STM32F1xx_HAL_Driver/Inc", "Drivers/CMSIS/Include",
++                    "Drivers/CMSIS/Device/ST/STM32F1xx/Include"]
++args = ["D:/msys64/ucrt64/bin/gcc.exe", "-std=c99", "-Wall", "-Wextra", "-Werror"]
++for directory in control_includes:
++    args += ["-I", directory]
++subprocess.run(args + ["Docs/test_controls.c", "-o", "tmp/m5-test/controls.exe"],
++               cwd=root, env=env, check=True)
++subprocess.run([str(out / "controls.exe")], cwd=root, env=env, check=True)
++bench = r"""
++#include <assert.h>
++#include <stdarg.h>
++#include <stdio.h>
++#include <string.h>
++#include "app_config.h"
++#include "m5_bench.h"
++#include "tb6612_fan.h"
++#include "storage.h"
++#include "bus_arbiter.h"
++#include "w25q64.h"
++Timer tim1,tim3;TIM_HandleTypeDef htim3={&tim3};
++static uint32_t now;
++static int fan_held,spi_held,pending,wrong_id;
++static event_record_t recent={.seq=1},queued;
++static bus_status_t stats;
++static unsigned reports,reported_pass,reported_errors,reported_id_errors,probes;
++static unsigned long reported_spi_waits,reported_fan_waits;
++uint32_t HAL_GetTick(void){return now;}
++unsigned __get_IPSR(void){return 0;}
++int bsp_is_faulted(void){return 0;}
++int HAL_TIM_PWM_Start(TIM_HandleTypeDef *t,unsigned c){(void)t;(void)c;return 0;}
++int fan_bus_take(uint32_t ms){
++ (void)ms;if(spi_held){++stats.fan_waits;return -1;}
++ assert(!fan_held);fan_held=1;stats.mode=BUS_FAN;return 0;
++}
++void fan_bus_give(void){assert(fan_held);tim3.CCR4=0;fan_held=0;stats.mode=BUS_IDLE;}
++void bus_status(bus_status_t *s){*s=stats;}
++int storage_recent(unsigned index,event_record_t *event,unsigned *count){assert(!index);*event=recent;*count=1;return 0;}
++int storage_event(uint32_t t,int32_t p,int32_t a){
++ if(pending)return -1;
++ queued.type=t;queued.parameter=p;queued.auxiliary=a;pending=1;return 0;
++}
++int w25q_probe(uint32_t *id){assert(!fan_held&&!spi_held);++probes;*id=wrong_id?0:W25Q_JEDEC_ID;return 0;}
++void bsp_log(const char *level,const char *fmt,...){
++ va_list ap;unsigned mode;(void)level;(void)fmt;va_start(ap,fmt);
++ mode=va_arg(ap,unsigned);reported_pass=va_arg(ap,unsigned);
++ reported_errors=va_arg(ap,unsigned);reported_id_errors=va_arg(ap,unsigned);
++ reported_spi_waits=va_arg(ap,unsigned long);reported_fan_waits=va_arg(ap,unsigned long);
++ va_end(ap);++reports;
++ printf("BENCH MODEL mode=%u pass=%u errors=%u jedec_errors=%u spi_waits=%u fan_waits=%u\n",
++  mode,reported_pass,reported_errors,reported_id_errors,(unsigned)reported_spi_waits,(unsigned)reported_fan_waits);
++}
++void vTaskDelay(unsigned ms){unsigned i;assert(spi_held);for(i=0;i<ms;i+=10){now+=10;fan_poll(now);}}
++static void log_poll(void){
++ if(!pending)return;
++ if(fan_held){++stats.spi_waits;return;}
++ spi_held=1;stats.mode=BUS_SPI;m5_bench_storage_hook((unsigned)queued.auxiliary);
++ queued.seq=recent.seq+1;recent=queued;pending=0;spi_held=0;stats.mode=BUS_IDLE;
++}
++static void step(void){now+=10;fan_poll(now);m5_bench_poll();log_poll();}
++static void run(unsigned mode){
++ unsigned i,initial=reports;m5_bench_request=mode;
++ for(i=0;i<20000 && reports==initial;i++){step();}
++ assert(reports==initial+1&&!fan_held&&!tim3.CCR4);
++}
++int main(void){
++ assert(!fan_init());
++ run(1);assert(reported_pass==100&&!reported_errors&&!reported_id_errors&&reported_spi_waits==100&&!reported_fan_waits&&probes==100);
++ run(2);assert(reported_pass==100&&!reported_errors&&!reported_id_errors&&reported_fan_waits>=100&&!reported_spi_waits&&probes==200);
++ wrong_id=1;run(1);assert(!reported_pass&&reported_errors==1&&reported_id_errors==1);wrong_id=0;
++ m5_bench_request=1;step();step();m5_bench_request=3;step();assert(reported_errors==1&&!fan_held&&!tim3.CCR4);
++ puts("PASS actual M5 bench/fan cooperative model: two100-cycle commands, required contention/event-seq/new JEDEC, fail-stop and abort");
++ return 0;
++}
++"""
++(out / "bench.c").write_text(bench)
++args = ["D:/msys64/ucrt64/bin/gcc.exe", "-std=c99", "-Wall", "-Wextra", "-Werror", "-DAPP_M5_STRESS_ENABLED=1"]
++for directory in includes + ["Drivers_Device/eventlog", "Drivers_Device/kvstore", "Drivers_Device/w25q64"]:
++    args += ["-I", directory]
++subprocess.run(args + ["tmp/m5-test/bench.c", "App/m5_bench.c",
++                      "Drivers_Device/tb6612_fan/tb6612_fan.c", "-o", "tmp/m5-test/bench.exe"],
++               cwd=root, env=env, check=True)
++subprocess.run([str(out / "bench.exe")], cwd=root, env=env, check=True)
++board = (root / "BSP/bsp_board.c").read_text(encoding="utf-8")
++safe_functions = board[board.index("static volatile uint32_t fault_latched;"):board.index("void bsp_board_init")]
++safe = r"""
++#include <assert.h>
++#include <stdint.h>
++#include <stdio.h>
++typedef struct {uint32_t CCR1,CCR2,CCR3,CCR4,BDTR;} Timer;
++static Timer a,b,c;
++static struct {uint32_t CR1;} spi;
++#define SPI1 (&spi)
++#define SPI_CR1_SPE 64u
++#define TIM1 (&a)
++#define TIM2 (&b)
++#define TIM3 (&c)
++#define __HAL_RCC_GPIOA_CLK_ENABLE() ((void)0)
++#define __HAL_RCC_GPIOB_CLK_ENABLE() ((void)0)
++#define GPIO_PIN_RESET 0
++#define GPIO_PIN_SET 1
++#define SERVO_CCR_MIN 500
++#define SERVO_MOE_MASK 0x8000u
++#define TB_STBY_PORT 0
++#define TB_STBY_PIN 4
++#define TB_BIN1_PORT 1
++#define TB_BIN1_PIN 7
++#define TB_BIN2_PORT 2
++#define TB_BIN2_PIN 13
++#define TB_SAFE_LEVEL 0
++#define BUZZER_GPIO_PORT 3
++#define BUZZER_PIN 5
++#define BUZZER_OFF_LEVEL 0
++#define FAN_SAFE_CCR 0
++#define RGB_R_PORT 4
++#define RGB_R_PIN 1
++#define RGB_G_PIN 2
++#define RGB_B_PIN 4
++#define RGB_OFF_LEVEL 1
++static unsigned levels[5];
++static void HAL_GPIO_WritePin(unsigned p,unsigned pin,unsigned value){(void)pin;levels[p]=value;}
++void bsp_safe_state(void);
++""" + safe_functions + r"""
++int main(void){
++ unsigned i;for(i=0;i<5;i++)levels[i]=1;
++ a.BDTR=SERVO_MOE_MASK;a.CCR1=2500;b.CCR2=b.CCR3=b.CCR4=999;c.CCR4=3600;spi.CR1=SPI_CR1_SPE;
++ bsp_emergency_stop();
++ assert(bsp_is_faulted()&&!spi.CR1&&!a.BDTR&&a.CCR1==500&&!c.CCR4&&!b.CCR2&&!b.CCR3&&!b.CCR4);
++ for(i=0;i<4;i++)assert(!levels[i]);
++ assert(levels[4]==RGB_OFF_LEVEL);
++ puts("PASS actual BSP emergency: latched fault, SPI disabled, STBY/direction/fan/RGB/buzzer safe, TIM1 MOE disabled");
++ return 0;
++}
++"""
++(out / "safe.c").write_text(safe)
++subprocess.run(["D:/msys64/ucrt64/bin/gcc.exe", "-std=c99", "-Wall", "-Wextra", "-Werror",
++                "tmp/m5-test/safe.c", "-o", "tmp/m5-test/safe.exe"], cwd=root, env=env, check=True)
++subprocess.run([str(out / "safe.exe")], cwd=root, env=env, check=True)
+diff --git a/Drivers_Device/sg90/sg90.c b/Drivers_Device/sg90/sg90.c
+new file mode 100644
+index 0000000..b266215
+--- /dev/null
++++ b/Drivers_Device/sg90/sg90.c
+@@ -0,0 +1,37 @@
++#include "sg90.h"
++#include "app_config.h"
++#include "bsp_services.h"
++#include "tim.h"
++#include "FreeRTOS.h"
++#include "task.h"
++static volatile unsigned target,current;
++static uint32_t last;
++int servo_init(void)
++{
++    MX_TIM1_Init();target=current=0;last=HAL_GetTick();
++    {
++        int result=-1;
++        taskENTER_CRITICAL();
++        if(!bsp_is_faulted())result=HAL_TIM_PWM_Start(&SERVO_TIM,SERVO_CH)==HAL_OK?0:-1;
++        taskEXIT_CRITICAL();return result;
++    }
++}
++int servo_write(unsigned angle)
++{
++    if(angle>180u || __get_IPSR())return -1;
++    taskENTER_CRITICAL();
++    if(bsp_is_faulted()){taskEXIT_CRITICAL();return -1;}
++    target=angle;taskEXIT_CRITICAL();return 0;
++}
++unsigned servo_angle(void){return current;}
++void servo_poll(uint32_t now)
++{
++    taskENTER_CRITICAL();
++    if(!bsp_is_faulted() && now-last>=SERVO_SLEW_MS_PER_DEG){
++        last=now;
++        if(current<target)++current;else if(current>target)--current;
++        __HAL_TIM_SET_COMPARE(&SERVO_TIM,SERVO_CH,
++            SERVO_CCR_MIN+((SERVO_CCR_MAX-SERVO_CCR_MIN)*current+90u)/180u);
++    }
++    taskEXIT_CRITICAL();
++}
+diff --git a/Drivers_Device/sg90/sg90.h b/Drivers_Device/sg90/sg90.h
+new file mode 100644
+index 0000000..fbd0b48
+--- /dev/null
++++ b/Drivers_Device/sg90/sg90.h
+@@ -0,0 +1,9 @@
++#ifndef SG90_H
++#define SG90_H
++#include <stdint.h>
++int servo_init(void);
++/** @brief Nonblocking target 0..180; timer advances <=1 degree per 50ms. */
++int servo_write(unsigned angle);
++unsigned servo_angle(void);
++void servo_poll(uint32_t now);
++#endif
+diff --git a/Drivers_Device/tb6612_fan/tb6612_fan.h b/Drivers_Device/tb6612_fan/tb6612_fan.h
+new file mode 100644
+index 0000000..1f8d407
+--- /dev/null
++++ b/Drivers_Device/tb6612_fan/tb6612_fan.h
+@@ -0,0 +1,10 @@
++#ifndef TB6612_FAN_H
++#define TB6612_FAN_H
++#include <stdint.h>
++int fan_init(void);
++/** @brief Task-only nonblocking target 0..100; zero cancels pending start. */
++int fan_set(unsigned percent);
++unsigned fan_percent(void);
++/** @brief AlarmTask sole owner of take/ramp/stop/give; bounded lock wait. */
++void fan_poll(uint32_t now);
++#endif

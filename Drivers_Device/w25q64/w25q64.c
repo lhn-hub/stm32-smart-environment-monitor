@@ -1,5 +1,6 @@
 #include "w25q64.h"
 #include "bus_arbiter.h"
+#include "bsp_services.h"
 #include "app_config.h"
 #include "spi.h"
 #include "FreeRTOS.h"
@@ -9,14 +10,32 @@ static uint32_t jedec,erases;
 static int identified;
 /* W25Q protocol opcodes/status bits. */
 enum { CMD_ID=0x9f,CMD_READ=3,CMD_PP=2,CMD_ERASE=0x20,CMD_WREN=6,CMD_SR=5,SR_BUSY=1,SR_WEL=2 };
-static int tx(const void *p,size_t n){return HAL_SPI_Transmit(&hspi1,(uint8_t*)p,(uint16_t)n,APP_FLASH_SPI_TIMEOUT_MS)==HAL_OK?0:-1;}
+/* Higher-priority polling tasks can exhaust the HAL wall-clock timeout. */
+static int tx(const void *p,size_t n)
+{
+    HAL_StatusTypeDef r;
+    vTaskSuspendAll();
+    r=HAL_SPI_Transmit(&hspi1,(uint8_t*)p,(uint16_t)n,APP_FLASH_SPI_TIMEOUT_MS);
+    (void)xTaskResumeAll();
+    return r==HAL_OK?0:-1;
+}
 static int rx(void *p,size_t n)
 {
+    HAL_StatusTypeDef r;
     /* STM32F1 master2-line HAL receive transmits this same buffer as dummy TX. */
     memset(p,0xff,n);
-    return HAL_SPI_Receive(&hspi1,p,(uint16_t)n,APP_FLASH_SPI_TIMEOUT_MS)==HAL_OK?0:-1;
+    vTaskSuspendAll();
+    r=HAL_SPI_Receive(&hspi1,p,(uint16_t)n,APP_FLASH_SPI_TIMEOUT_MS);
+    (void)xTaskResumeAll();
+    return r==HAL_OK?0:-1;
 }
-static void select_flash(int active){HAL_GPIO_WritePin(W25Q_CS_PORT,W25Q_CS_PIN,active?GPIO_PIN_RESET:GPIO_PIN_SET);}
+static void select_flash(int active)
+{
+    taskENTER_CRITICAL();
+    HAL_GPIO_WritePin(W25Q_CS_PORT,W25Q_CS_PIN,
+        active || bsp_is_faulted()?GPIO_PIN_RESET:GPIO_PIN_SET);
+    taskEXIT_CRITICAL();
+}
 static int status(uint8_t *s)
 {uint8_t c=CMD_SR;int r;select_flash(1);r=tx(&c,1);if(!r)r=rx(s,1);select_flash(0);return r;}
 static int wait_ready(uint32_t limit)
@@ -45,6 +64,15 @@ int w25q_init(void)
     return identified?0:-1;
 }
 uint32_t w25q_id(void){return jedec;}
+int w25q_probe(uint32_t *id)
+{
+    uint8_t c=CMD_ID,b[3];int r;
+    if(!identified || !id || spi_bus_take(APP_SPI_LOCK_MS))return -1;
+    r=wait_ready(APP_FLASH_PROGRAM_MS);
+    if(!r){select_flash(1);r=tx(&c,1);if(!r)r=rx(b,3);select_flash(0);}
+    if(!r)*id=((uint32_t)b[0]<<16)|((uint32_t)b[1]<<8)|b[2];
+    spi_bus_give();return r;
+}
 uint32_t w25q_erases(void){return erases;}
 int w25q_read(uint32_t a,void *p,size_t n)
 {

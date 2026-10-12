@@ -1,7 +1,7 @@
 #ifndef APP_CONFIG_H
 #define APP_CONFIG_H
 #include "bsp_pin.h"
-#define APP_FW_VERSION "0.5.0-dev"
+#define APP_FW_VERSION "0.6.0-dev"
 #define APP_WIFI_SSID ""
 #define APP_WIFI_PASSWORD ""
 #define APP_MQTT_HOST "broker.emqx.io"
@@ -141,4 +141,9 @@
 #define APP_STORAGE_STRESS_ENABLED 0
 #define APP_STORAGE_STRESS_WRITES 500u
 #define APP_STORAGE_EVENT_STRESS 2304u
+#define APP_ACTUATOR_POLL_MS 10u
+#ifndef APP_M5_STRESS_ENABLED
+#define APP_M5_STRESS_ENABLED 0
+#endif
+#define APP_M5_STRESS_CYCLES 100u
 #endif

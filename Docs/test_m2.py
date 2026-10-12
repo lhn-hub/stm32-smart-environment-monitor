@@ -8,7 +8,7 @@ def compile_run(name,source):
     (out/(name+'.c')).write_text(source,encoding='utf-8')
     subprocess.run(['D:/msys64/ucrt64/bin/gcc.exe','-std=c99','-Wall','-Wextra','-Werror',
       '-I','Drivers_Device/kvstore','-I','Drivers_Device/eventlog','-I','Drivers_Device','-I','BSP','-I','App','-I','Inc','-I','Drivers_Device/ec11','-I','Drivers_Device/oled_ssd1306','-I','App/menu',
-      '-I','Drivers_Device/oled_ui','-I','tmp/m2','tmp/m2/'+name+'.c','-o','tmp/m2/'+name+'.exe'],cwd=root,env=env,check=True)
+      '-I','Drivers_Device/sg90','-I','Drivers_Device/tb6612_fan','-I','Drivers_Device/oled_ui','-I','tmp/m2','tmp/m2/'+name+'.c','-o','tmp/m2/'+name+'.exe'],cwd=root,env=env,check=True)
     subprocess.run([str(out/(name+'.exe'))],cwd=root,env=env,check=True)
 ec=(root/'Drivers_Device/ec11/ec11.c').read_text(encoding='utf-8')
 part=ec[ec.index('void ec11_reset'):ec.index('static uint8_t sample')]
@@ -125,10 +125,24 @@ uint32_t rtc_get(void){return 3661;}
 uint32_t vdda_mv_get(void){return 3300;}
 int beep_ms(uint16_t ms){(void)ms;beeps++;return 0;}
 int rgb_set(uint16_t r,uint16_t g,uint16_t b){colors=r+g+b;return 0;}
+static unsigned fan_value,servo_value;
+int fan_set(unsigned p){assert(p<=100);fan_value=p;return 0;}
+unsigned fan_percent(void){return fan_value;}
+int servo_write(unsigned p){assert(p<=180);servo_value=p;return 0;}
+unsigned servo_angle(void){return servo_value;}
+int effect_set(effect_t e){assert(e<EFFECT_COUNT);colors=0;return 0;}
 void i2c_scan(void){}
 void bsp_log(const char *level,const char *format,...){(void)level;(void)format;}
 #include "../../Drivers_Device/oled_ui/oled_ui.c"
 #include "../../App/menu/menu.c"
+static void expect_header(const char *title)
+{
+ uint8_t rendered[128];
+ now+=APP_OLED_FRAME_MS;menu_poll();memcpy(rendered,pixels,sizeof(rendered));
+ oled_clear();oled_text(0,0,title,0);
+ if(memcmp(rendered,pixels,sizeof(rendered)))fprintf(stderr,"Expected OLED header: %s\n",title);
+ assert(!memcmp(rendered,pixels,sizeof(rendered)));
+}
 int main(void){
  unsigned i;key_event_t next={KEY_WAKEUP,KEY_CLICK,0},prev={KEY_WAKEUP,KEY_LONG,0};key_event_t yes={KEY_CONFIRM,KEY_CLICK,0},back={KEY_BACK,KEY_CLICK,0},hold={KEY_CONFIRM,KEY_LONG,0};
  menu_init();assert(current()==HOME);menu_key(&next);assert(current()==ROOT);
@@ -141,8 +155,45 @@ int main(void){
  assert(save_calls==0);menu_key(&yes);assert(!editing&&save_calls==1&&persisted[0]==APP_EDIT_MAX_TEMP);
  menu_key(&back);selected[ROOT]=5;menu_key(&yes);now+=100;menu_poll();
  assert(history_count==20&&history_reads>0);selected[EVENTLOG]=19;menu_key(&next);assert(selected[EVENTLOG]==0);
- menu_key(&back);selected[ROOT]=3;menu_key(&yes);menu_key(&yes);assert(beeps==1);
- selected[MANUAL]=1;menu_key(&yes);assert(colors==999);selected[MANUAL]=4;menu_key(&yes);assert(colors==0);
+ menu_key(&back);selected[ROOT]=3;menu_key(&yes);selected[MANUAL]=9;menu_key(&yes);assert(beeps==1);
+ selected[MANUAL]=10;menu_key(&yes);assert(colors==999);selected[MANUAL]=8;menu_key(&yes);assert(colors==0);
+ selected[MANUAL]=0;menu_key(&yes);assert(editing);
+ menu_key(&prev);assert(fan_percent()==0);
+ for(i=0;i<110;i++){menu_key(&next);}assert(fan_value==100);
+ menu_key(&prev);assert(fan_percent()==99);menu_key(&next);menu_poll();menu_key(&yes);
+ selected[MANUAL]=1;menu_key(&yes);menu_key(&prev);assert(servo_angle()==0);
+ for(i=0;i<190;i++){menu_key(&next);}assert(servo_value==180);
+ menu_key(&prev);assert(servo_angle()==179);menu_key(&next);menu_poll();menu_key(&yes);
+ selected[MANUAL]=2;now+=100;menu_poll();menu_key(&back);assert(!fan_value&&!servo_value);
+ menu_key(&yes);
+ for(i=0;i<12;i++){menu_key(&next);}
+ menu_key(&yes);expect_header("FONTS");
+ menu_key(&prev);expect_header("MANUAL TEST");
+ menu_key(&next);menu_key(&next);expect_header("Fan %");
+ {
+  uint8_t frames[15][1024];
+  for(i=0;i<15;i++){
+   now+=APP_OLED_FRAME_MS;menu_poll();memcpy(frames[i],pixels,sizeof(pixels));menu_key(&next);
+  }
+  expect_header("Fan %");
+  for(i=15;i>0;i--){
+   menu_key(&prev);now+=APP_OLED_FRAME_MS;menu_poll();
+   assert(!memcmp(frames[i-1],pixels,sizeof(pixels)));
+  }
+ }
+ menu_key(&prev);menu_key(&yes);expect_header("FONTS");
+ menu_key(&next);expect_header("Fan %");
+ menu_key(&prev);menu_key(&yes);expect_header("FONTS");
+ menu_key(&back);expect_header("MANUAL TEST");menu_key(&back);
+ assert(!fan_percent()&&!servo_angle());
+ puts("PASS Manual Test visible navigation: all 15 items forward/back/wrap, font preview long/click/back, edit decrement/clamp, exit safe");
+ stack[depth]=MANUAL;
+ for(i=0;i<3;i++){
+  char path[64];FILE *f;unsigned x,y;selected[MANUAL]=i;manual_fan=100;manual_servo=180;
+  fan_value=100;servo_value=180;oled_clear();render_manual();
+  snprintf(path,sizeof(path),"tmp/m2/manual-%u.pbm",i);f=fopen(path,"wb");assert(f);fprintf(f,"P1\n128 64\n");
+  for(y=0;y<64;y++){for(x=0;x<128;x++)fprintf(f,"%u ",(pixels[y/8*128+x]>>(y&7))&1);fputc('\n',f);}fclose(f);
+ }
  for(i=0;i<PAGE_COUNT;i++){
   char path[64];FILE *f;unsigned x,y;stack[depth]=(page_id)i;oled_clear();pages[i].render();
   snprintf(path,sizeof(path),"tmp/m2/page-%u.pbm",i);f=fopen(path,"wb");assert(f);fprintf(f,"P1\n128 64\n");
@@ -158,6 +209,11 @@ for i,p in enumerate(paths):
     im=Image.open(p).convert('L');im=ImageOps.invert(im).resize((512,256),Image.Resampling.NEAREST)
     sheet.paste(im,(0,i*280+18));draw.text((0,i*280),p.stem,fill='white')
 sheet.save(out/'preview.png')
+manual_sheet=Image.new('RGB',(512,3*256),'black')
+for i,p in enumerate(sorted(out.glob('manual-*.pbm'))):
+    im=ImageOps.invert(Image.open(p).convert('L')).resize((512,256),Image.Resampling.NEAREST)
+    manual_sheet.paste(im,(0,i*256))
+manual_sheet.save(root/'Docs/M5-manual-host.png')
 
 console=(root/'BSP/bsp_console.c').read_text(encoding='utf-8')
 quiet_code=console[console.index('int bsp_log_quiet_begin'):console.index('static const char *display_task')]

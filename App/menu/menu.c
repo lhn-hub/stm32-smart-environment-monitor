@@ -4,6 +4,8 @@
 #include "app_config.h"
 #include "datahub.h"
 #include "storage.h"
+#include "sg90.h"
+#include "tb6612_fan.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include <stdio.h>
@@ -81,14 +83,34 @@ static void render_thresholds(void)
     for(i=0;i<4;i++){snprintf(text,sizeof(text),"%s:%d",threshold_labels[i],values[i]);row(i,text,i==selected[THRESHOLDS]);}
     if(editing){unsigned s=selected[THRESHOLDS];ui_progress(0,52,128,9,values[s],maxima[s]);}
 }
-static const char *manual_labels[]={"Beep","RGB Red","RGB Green","RGB Blue","RGB Off","I2C Scan","Servo (M5)","Fan (M5)","Font test"};
+static const char *manual_labels[]={"Fan %","Servo deg","Distance","Fire","Intrusion","Air","Fault","Network","Standby","Beep","RGB Red","RGB Green","RGB Blue","I2C Scan","Font test"};
+static int manual_fan,manual_servo;
 static unsigned font_test;
+#define MANUAL_COUNT (sizeof(manual_labels)/sizeof(manual_labels[0]))
+static void manual_exit(void)
+{fan_set(0);servo_write(0);effect_set(EFFECT_STANDBY);manual_fan=manual_servo=0;font_test=0;}
 static void render_manual(void)
 {
     if(font_test){unsigned i;header("FONTS");oled_text(0,12,"ASCII 6x8",0);oled_text(0,22,"8x16",1);
         for(i=0;i<7;i++) { oled_hanzi((int)i*16,44,i); }
         return;}
-    render_list("MANUAL TEST",manual_labels,9);
+    if(selected[MANUAL]<=2u){
+        unsigned s=selected[MANUAL];header(manual_labels[s]);
+        if(s<2u){
+            unsigned actual=s==0?fan_percent():servo_angle();
+            int value=s==0?manual_fan:manual_servo;
+            snprintf(text,sizeof(text),"Set:%d Out:%u",value,actual);oled_text(0,18,text,0);
+            ui_progress(0,32,128,10,value,s==0?100:180);
+            oled_text(0,52,editing?"ADJUST":"READY",0);
+        }else if(!datahub_snapshot(&sensors)){
+            const sensor_value_t *d=&sensors.sensors[SENSOR_DISTANCE];
+            if(d->quality==SENSOR_FAULT)snprintf(text,sizeof(text),"FAULT");
+            else snprintf(text,sizeof(text),"%ld cm%s",(long)d->value,d->quality==SENSOR_STALE?" STALE":"");
+            oled_text(0,24,text,1);
+        }
+        return;
+    }
+    render_list("MANUAL TEST",manual_labels,MANUAL_COUNT);
 }
 static void render_network(void) {header("NETWORK");oled_text(0,18,"WiFi: offline",0);oled_text(0,30,"MQTT: offline",0);oled_text(0,44,"M6 placeholder",0);}
 static void render_log(void)
@@ -129,16 +151,18 @@ static void select_key(int key)
         else if(store_state.ready && !store_state.pending)editing=1;
     }
     else if(id==MANUAL){
-        if(s<=4 && storage_event(EVENT_MANUAL,(int32_t)s,0))LOGW("手动测试事件未入队");
-        switch(s){case 0:beep_ms(APP_MENU_BEEP_MS);break;case 1:rgb_set(RGB_ARR,0,0);break;
-        case 2:rgb_set(0,RGB_ARR,0);break;case 3:rgb_set(0,0,RGB_ARR);break;case 4:rgb_set(0,0,0);break;
-        case 5:i2c_scan();break;case 8:font_test=!font_test;break;default:break;}
+        if(s<2u){editing=!editing;return;}
+        if(s>=3u && s<=12u && storage_event(EVENT_MANUAL,(int32_t)s,0))LOGW("手动测试事件未入队");
+        if(s>=3u && s<=8u)effect_set(s==8u?EFFECT_STANDBY:(effect_t)(s-2u));
+        else switch(s){case 9:effect_set(EFFECT_STANDBY);beep_ms(APP_MENU_BEEP_MS);break;
+        case 10:case 11:case 12:effect_set(EFFECT_STANDBY);rgb_set(s==10?RGB_ARR:0,s==11?RGB_ARR:0,s==12?RGB_ARR:0);break;
+        case 13:i2c_scan();break;case 14:font_test=!font_test;break;default:break;}
     }
 }
 static const page_t pages[PAGE_COUNT]={
  {no_op,no_op,render_home,select_key},{no_op,no_op,render_root,select_key},
  {no_op,no_op,render_arm,select_key},{no_op,no_op,render_thresholds,select_key},
- {no_op,no_op,render_manual,select_key},{no_op,no_op,render_network,select_key},
+ {no_op,manual_exit,render_manual,select_key},{no_op,no_op,render_network,select_key},
  {no_op,no_op,render_log,select_key},{no_op,no_op,render_system,select_key},{no_op,no_op,render_about,select_key}};
 void menu_init(void){depth=0;stack[0]=HOME;(void)oled_init();deadline=HAL_GetTick();last_report=deadline;frames=0;}
 static void navigate(int steps)
@@ -146,9 +170,16 @@ static void navigate(int steps)
     uint32_t now=HAL_GetTick();page_id id=current();
     if(id==HOME){push(ROOT);return;}
     if(steps){
+        if(id==MANUAL)font_test=0;
         if(id==THRESHOLDS && editing){unsigned s=selected[id];int gain=(int32_t)(accelerate_until-now)>0?APP_EDIT_ACCEL:1;
             values[s]+=steps*gain;if(values[s]<0)values[s]=0;if(values[s]>maxima[s])values[s]=maxima[s];}
-        else {int count=id==ROOT?8:id==THRESHOLDS?4:id==MANUAL?9:id==EVENTLOG?(history_count?(int)history_count:1):1;int n=(int)selected[id]+steps;
+        else if(id==MANUAL && editing && selected[id]<2u){
+            int *value=selected[id]==0?&manual_fan:&manual_servo;
+            int max=selected[id]==0?100:180;
+            *value+=steps;if(*value<0)*value=0;if(*value>max)*value=max;
+            if(selected[id]==0)fan_set((unsigned)*value);else servo_write((unsigned)*value);
+        }
+        else {int count=id==ROOT?8:id==THRESHOLDS?4:id==MANUAL?(int)MANUAL_COUNT:id==EVENTLOG?(history_count?(int)history_count:1):1;int n=(int)selected[id]+steps;
             if(n<0)n=count-1;
             if(n>=count)n=0;
             selected[id]=(unsigned)n;}

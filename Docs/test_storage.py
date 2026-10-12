@@ -25,7 +25,12 @@ int xSemaphoreGive(void *m){return m!=NULL;}
 void *xQueueCreate(unsigned n,unsigned size){TestQueue*q=calloc(1,sizeof(*q));assert(n*size<=128);q->n=n;q->size=size;return q;}
 int xQueueSend(void *v,const void*p,unsigned ms){TestQueue*q=v;(void)ms;if(q->count==q->n)return 0;memcpy(q->data+q->tail*q->size,p,q->size);q->tail=(q->tail+1)%q->n;q->count++;return 1;}
 int xQueueReceive(void *v,void*p,unsigned ms){TestQueue*q=v;(void)ms;if(!q->count)return 0;memcpy(p,q->data+q->head*q->size,q->size);q->head=(q->head+1)%q->n;q->count--;return 1;}
-int spi_bus_init(void){return 0;}unsigned __get_IPSR(void){return 0;}
+unsigned uxQueueMessagesWaiting(void *v){return ((TestQueue*)v)->count;}
+static int bus_busy,bus_held;
+int spi_bus_init(void){return 0;}
+int spi_bus_take(uint32_t ms){(void)ms;if(bus_busy)return -1;assert(!bus_held);bus_held=1;return 0;}
+void spi_bus_give(void){assert(bus_held);bus_held=0;}
+unsigned __get_IPSR(void){return 0;}
 uint32_t rtc_get(void){return 12345;}
 int datahub_set_gas_limits(uint32_t a,uint32_t b){applied_smoke=a;applied_air=b;return 0;}
 void bsp_log(const char*l,const char*f,...){(void)l;(void)f;}
@@ -120,7 +125,11 @@ int main(void){
   assert(!storage_get_fields(fields,&status)&&status.ready&&fields[CFG_TEMP]==50);
   assert(!storage_set(CFG_TEMP,66));assert(storage_set(CFG_TEMP,67)==-1);
   assert(!storage_get_fields(fields,&status)&&fields[CFG_TEMP]==50&&status.pending);
+  bus_busy=1;for(i=0;i<100;i++)storage_poll();
+  assert(!storage_get_fields(fields,&status)&&status.ready&&!status.errors&&status.pending&&fields[CFG_TEMP]==50);
+  bus_busy=0;
   storage_poll();assert(!storage_get_fields(fields,&status)&&fields[CFG_TEMP]==66&&!status.pending);
+  assert(!bus_held);
   assert(applied_smoke==DEF_SMOKE_CONFIRM_MS);assert(!kv_load(&c)&&c.temp_x10==660);
   assert(!storage_recent(0,&rec,&nr)&&rec.type==EVENT_CONFIG);
   for(i=0;i<APP_STORAGE_QUEUE;i++)assert(!storage_event(EVENT_MANUAL,(int32_t)i,0));
@@ -129,13 +138,13 @@ int main(void){
   assert(!storage_get_fields(fields,&status)&&!status.ready&&status.errors&&fields[CFG_TEMP]==66);
   assert(storage_set(CFG_TEMP,88)==-1);assert(!kv_load(&c)&&c.temp_x10==660);
  }
- puts("PASS actual storage queue: offline/busy/full refusal, apply after commit only, failure retains prior visible/durable config");
+ puts("PASS actual storage queue: 100 fan waits preserve queued config/ready state, offline/busy/full refusal, commit-only apply, failure retains prior config");
  return 0;
 }
 '''
 (OUT/'FreeRTOS.h').write_text('#include <assert.h>\n#define configASSERT(x) assert(x)\n#define pdTRUE 1\n#define pdMS_TO_TICKS(x) (x)\n#define portMAX_DELAY 0xffffffffu\n')
 (OUT/'semphr.h').write_text('typedef void* SemaphoreHandle_t;\nSemaphoreHandle_t xSemaphoreCreateMutex(void);\nint xSemaphoreTake(void*,unsigned);\nint xSemaphoreGive(void*);\n')
-(OUT/'queue.h').write_text('typedef void* QueueHandle_t;\nQueueHandle_t xQueueCreate(unsigned,unsigned);\nint xQueueSend(void*,const void*,unsigned);\nint xQueueReceive(void*,void*,unsigned);\n')
+(OUT/'queue.h').write_text('typedef void* QueueHandle_t;\nQueueHandle_t xQueueCreate(unsigned,unsigned);\nint xQueueSend(void*,const void*,unsigned);\nint xQueueReceive(void*,void*,unsigned);\nunsigned uxQueueMessagesWaiting(void*);\n')
 (OUT/'test.c').write_text(test)
 args=['D:/msys64/ucrt64/bin/gcc.exe','-std=c99','-O1','-Wall','-Wextra','-Werror']
 for path in ['tmp/storage-test','Drivers_Device','App','BSP','Drivers_Device/kvstore','Drivers_Device/eventlog','Drivers_Device/w25q64']:args+=['-I',path]

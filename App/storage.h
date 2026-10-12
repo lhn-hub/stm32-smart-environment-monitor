@@ -3,7 +3,7 @@
 #include "eventlog.h"
 #include "kvstore.h"
 enum { CFG_TEMP,CFG_DISTANCE,CFG_SMOKE,CFG_AIR,CFG_MODE,CFG_FIELD_COUNT };
-enum { EVENT_BOOT=1,EVENT_CONFIG=2,EVENT_MANUAL=3 };
+enum { EVENT_BOOT=1,EVENT_CONFIG=2,EVENT_MANUAL=3,EVENT_BUS_TEST=4 };
 typedef struct {uint32_t ready,errors,dropped,erases,config_seq,pending; } storage_status_t;
 /** @brief Create bounded request queue/mutex; before scheduler. */
 int storage_setup(void);

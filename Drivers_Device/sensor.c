@@ -84,9 +84,10 @@ void sensors_log_table(void)
     {
         const dht11_debug_t *d=dht11_debug();
         const cs100a_debug_t *u=cs100a_debug();
-        LOGI("DHT诊断 最近失败=%u 拉低=%lums 采集=%luus 段=%lu 异常段=%lu/%luus",
+        LOGI("DHT诊断 最近失败=%u 拉低=%lums 采集=%luus 段=%lu 异常段=%lu/%luus 电平=%u/%u/%u IRQ=%lu",
             (unsigned)d->last_error,(unsigned long)d->start_ms,(unsigned long)d->capture_us,
-            (unsigned long)d->captured_widths,(unsigned long)d->bad_index,(unsigned long)d->bad_width_us);
+            (unsigned long)d->captured_widths,(unsigned long)d->bad_index,(unsigned long)d->bad_width_us,
+            (unsigned)d->low_level,(unsigned)d->released_level,(unsigned)d->end_level,(unsigned long)d->irqs);
         LOGI("DHT失败数 拉低超时=%lu 无响应=%lu 缺段=%lu 边沿=%lu 响应宽=%lu 位宽=%lu 校验=%lu 范围=%lu",
             (unsigned long)d->errors[DHT_ERR_START_LONG],(unsigned long)d->errors[DHT_ERR_NO_RESPONSE],
             (unsigned long)d->errors[DHT_ERR_INCOMPLETE],(unsigned long)d->errors[DHT_ERR_EDGE_GAP],

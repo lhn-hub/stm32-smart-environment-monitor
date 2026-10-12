@@ -17,6 +17,9 @@ typedef struct {
     uint32_t errors[DHT_ERR_COUNT];
     dht11_error_t last_error;
     uint32_t start_ms, capture_us, captured_widths, bad_index, bad_width_us;
+    uint32_t irqs;
+    /** @brief Failed attempt's DATA levels; 2 means the stage was not reached. */
+    uint8_t low_level, released_level, end_level;
 } dht11_debug_t;
 /** @brief SensorTask-owned last FAILED attempt; success does not erase evidence. */
 const dht11_debug_t *dht11_debug(void);

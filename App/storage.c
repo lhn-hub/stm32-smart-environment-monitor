@@ -3,6 +3,7 @@
 #include "bus_arbiter.h"
 #include "bsp_services.h"
 #include "datahub.h"
+#include "m5_bench.h"
 #include "FreeRTOS.h"
 #include "queue.h"
 #include "semphr.h"
@@ -101,6 +102,11 @@ void storage_poll(void)
     request_t r;int ready;
     take_view();ready=state.ready;xSemaphoreGive(view_lock);
     if(!ready)return;
+    /* No idle pin churn; a queued request remains queued until the bus is ours. */
+#if !APP_STORAGE_STRESS_ENABLED
+    if(!uxQueueMessagesWaiting(requests))return;
+#endif
+    if(spi_bus_take(APP_SPI_LOCK_MS))return;
 #if APP_STORAGE_STRESS_ENABLED
     if(!bench_left && (storage_bench_request==1 || storage_bench_request==2)){
         bench_mode=storage_bench_request;storage_bench_request=0;
@@ -110,24 +116,29 @@ void storage_poll(void)
     if(bench_left){
         if(bench_mode==1){
             current_config.temp_x10=bench_left==1?bench_saved_temp:(int32_t)(bench_left%APP_EDIT_MAX_TEMP)*10;
-            if(kv_save(&current_config)){offline();bench_left=0;return;}
+            if(kv_save(&current_config)){offline();bench_left=0;goto done;}
             publish_fields();
-        }else if(log_append(rtc_get(),EVENT_MANUAL,(int32_t)bench_left,0)){offline();bench_left=0;return;}
+        }else if(log_append(rtc_get(),EVENT_MANUAL,(int32_t)bench_left,0)){offline();bench_left=0;goto done;}
         if(--bench_left==0){if(refresh_recent())offline();LOGI("存储压力测试结束 模式=%lu",(unsigned long)bench_mode);}
-        return;
+        goto done;
     }
 #endif
-    if(xQueueReceive(requests,&r,0)!=pdTRUE)return;
+    if(xQueueReceive(requests,&r,0)!=pdTRUE)goto done;
+#if APP_M5_STRESS_ENABLED
+    if(r.kind==EVENT_BUS_TEST)m5_bench_storage_hook((unsigned)r.second);
+#endif
     if(!r.kind){
         switch(r.first){case CFG_TEMP:current_config.temp_x10=r.second*10;break;case CFG_DISTANCE:current_config.distance_cm=(uint32_t)r.second;break;
         case CFG_SMOKE:current_config.smoke_ms=(uint32_t)r.second;break;case CFG_AIR:current_config.air_ms=(uint32_t)r.second;break;
-        case CFG_MODE:current_config.mode=(uint32_t)r.second;break;default:offline();return;}
-        if(kv_save(&current_config)){offline();return;}
-        if(datahub_set_gas_limits(current_config.smoke_ms,current_config.air_ms)){offline();return;}
+        case CFG_MODE:current_config.mode=(uint32_t)r.second;break;default:offline();goto done;}
+        if(kv_save(&current_config)){offline();goto done;}
+        if(datahub_set_gas_limits(current_config.smoke_ms,current_config.air_ms)){offline();goto done;}
         publish_fields();
         LOGI("配置已保存 序号=%lu 字段=%ld 值=%ld",(unsigned long)current_config.seq,(long)r.first,(long)r.second);
         take_view();state.pending=0;xSemaphoreGive(view_lock);
         r.kind=EVENT_CONFIG;
     }
-    if(log_append(r.time,r.kind,r.first,r.second)||refresh_recent()){offline();return;}
+    if(log_append(r.time,r.kind,r.first,r.second)||refresh_recent())offline();
+done:
+    spi_bus_give();
 }

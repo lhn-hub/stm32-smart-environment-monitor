@@ -8,6 +8,8 @@
 #include "sensor.h"
 #include "datahub.h"
 #include "storage.h"
+#include "tb6612_fan.h"
+#include "m5_bench.h"
 int bsp_adc_start(void);
 int bsp_rtc_start(void);
 int bsp_net_start(void);
@@ -92,6 +94,12 @@ static void worker(void *argument)
             }
         }
         if(id==5)storage_poll();
+        if(id==1 && (ready&((1u<<4)|(1u<<5)))==((1u<<4)|(1u<<5))){
+            fan_poll(now);
+#if APP_M5_STRESS_ENABLED
+            m5_bench_poll();
+#endif
+        }
         if(id==3)sensors_poll();
         if(id==4 && ui_started) menu_poll();
         if(now-last_status>=APP_STATUS_MS) {
@@ -101,7 +109,7 @@ static void worker(void *argument)
             if(id==3)sensors_log_table();
             if(id==0) LOGI("堆剩余=%u字节 看门狗故障=%lu",(unsigned)xPortGetFreeHeapSize(),(unsigned long)watchdog_tripped);
         }
-        vTaskDelay(pdMS_TO_TICKS(id==2?APP_NET_POLL_MS:id==4?APP_MENU_PERIOD_MS:id==3?APP_SENSOR_POLL_MS:APP_MONITOR_PERIOD_MS));
+        vTaskDelay(pdMS_TO_TICKS(id==1?APP_ACTUATOR_POLL_MS:id==2?APP_NET_POLL_MS:id==4?APP_MENU_PERIOD_MS:id==3?APP_SENSOR_POLL_MS:APP_MONITOR_PERIOD_MS));
     }
 }
 void app_start(void)
