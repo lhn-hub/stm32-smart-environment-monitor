@@ -83,8 +83,8 @@ static int net_rx_restart(void)
     (void)HAL_UART_AbortReceive(&huart3);
     taskENTER_CRITICAL();
     read_pos=0; line_len=0; discard=0; ipd_remaining=0;
-    memset(rx,0,sizeof(rx));
     taskEXIT_CRITICAL();
+    memset(rx,0,sizeof(rx)); /* RX DMA is stopped; clearing does not need BASEPRI. */
     last_poll=HAL_GetTick();
     if(HAL_UART_Receive_DMA(&huart3,rx,sizeof(rx))!=HAL_OK)return -1;
     __HAL_UART_ENABLE_IT(&huart3,UART_IT_IDLE);
@@ -98,9 +98,6 @@ int bsp_net_hard_reset(void)
     LOGI("ESP复位释放 RST=%u RX=%u 波特率=%lu",
          (unsigned)HAL_GPIO_ReadPin(ESP_RST_PORT,ESP_RST_PIN),
          (unsigned)HAL_GPIO_ReadPin(ESP_RX_PORT,ESP_RX_PIN),(unsigned long)ESP_UART_BAUD);
-    LOGI("ESP引脚 CRH=0x%08lX ODR=0x%04lX IDR=0x%04lX",
-         (unsigned long)ESP_RST_PORT->CRH,(unsigned long)ESP_RST_PORT->ODR,
-         (unsigned long)ESP_RST_PORT->IDR);
     return net_rx_restart();
 }
 char *bsp_net_tx_buffer(size_t *capacity)
@@ -118,11 +115,11 @@ int bsp_net_send(const void *data,size_t length)
 {
     /* NetTask is sole TX owner. Buffer lifetime extends until DMA completes. */
     if(!data || !length || length>sizeof(tx) || huart3.gState!=HAL_UART_STATE_READY) return -1;
-    memcpy(tx,data,length);
+    if(data!=tx)memcpy(tx,data,length);
     return bsp_net_send_buffer(length);
 }
 __weak void net_on_rx_line(const char *data,size_t length)
-{ (void)length; LOGI("串口3接收：%s",data); }
+{ (void)data; (void)length; }
 __weak void net_on_rx_bytes(const uint8_t *data,size_t length)
 { (void)data; (void)length; }
 __weak void net_on_rx_prompt(void)

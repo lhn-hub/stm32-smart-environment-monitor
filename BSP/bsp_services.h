@@ -11,6 +11,13 @@ void bsp_emergency_stop(void);
 int bsp_is_faulted(void);
 /** @brief Bounded emergency output then safe halt; callable from fault hooks. */
 void bsp_panic(const char *reason);
+void bsp_fault_dump(const uint32_t *frame,uint32_t exception_return);
+void bsp_fault_record(unsigned cause,uint32_t pc);
+void bsp_boot_stats(unsigned *watchdogs,unsigned *boots);
+void bsp_backup_restore(void);
+void bsp_fault_hex(const char *label,uint32_t value);
+void bsp_audit_report(void);
+void bsp_audit_start(void);
 /** @brief Task-only serialized printf log. No floating point formats. */
 void bsp_log(const char *level, const char *format, ...);
 /** @brief Task-only bounded logging exclusion for one short polling transfer.

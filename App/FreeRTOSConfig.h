@@ -2,6 +2,11 @@
 #define FREERTOS_CONFIG_H
 #include "app_config.h"
 void bsp_panic(const char *reason);
+#if APP_CRITICAL_AUDIT
+void bsp_audit_enter(unsigned site);
+void bsp_audit_exit(void);
+unsigned bsp_audit_isr_enter(unsigned mask,unsigned site);
+#endif
 #define configUSE_PREEMPTION 1
 #define configCPU_CLOCK_HZ BSP_SYSCLK_HZ
 #define configTICK_RATE_HZ APP_RTOS_TICK_HZ
@@ -25,7 +30,7 @@ void bsp_panic(const char *reason);
 #define configUSE_TICK_HOOK 0
 #define configSUPPORT_DYNAMIC_ALLOCATION 1
 #define configSUPPORT_STATIC_ALLOCATION 0
-#define configUSE_TRACE_FACILITY 0
+#define configUSE_TRACE_FACILITY APP_M8_TEST_ENABLED
 #define configUSE_NEWLIB_REENTRANT 0
 #define configPRIO_BITS APP_RTOS_PRIORITY_BITS
 #define configLIBRARY_LOWEST_INTERRUPT_PRIORITY BSP_IRQ_SYSTICK_PRIO

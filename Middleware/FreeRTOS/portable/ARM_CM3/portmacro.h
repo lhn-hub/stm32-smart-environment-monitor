@@ -102,6 +102,12 @@ extern void vPortExitCritical( void );
 #define portENABLE_INTERRUPTS()					vPortSetBASEPRI(0)
 #define portENTER_CRITICAL()					vPortEnterCritical()
 #define portEXIT_CRITICAL()						vPortExitCritical()
+#if APP_CRITICAL_AUDIT
+#undef portSET_INTERRUPT_MASK_FROM_ISR
+#undef portCLEAR_INTERRUPT_MASK_FROM_ISR
+#define portSET_INTERRUPT_MASK_FROM_ISR() bsp_audit_isr_enter(ulPortRaiseBASEPRI(),(unsigned)(uintptr_t)__builtin_return_address(0))
+#define portCLEAR_INTERRUPT_MASK_FROM_ISR(mask) do { bsp_audit_exit();vPortSetBASEPRI(mask); } while(0)
+#endif
 
 /*-----------------------------------------------------------*/
 

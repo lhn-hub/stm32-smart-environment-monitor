@@ -38,7 +38,7 @@ write(
     #define APP_EDIT_MAX_CONFIRM_MS 60000
     #define APP_MQTT_KEEPALIVE 60u
     #define APP_MQTT_LWT "offline"
-    #define APP_TELEMETRY_MS 5000u
+    #define APP_TELEMETRY_MS 2000u
     #define ESP_RETRY_MAX 3u
     #define ESP_BACKOFF_MS 60000u
     #define CFG_TEMP 0u
@@ -114,7 +114,9 @@ write(
 )
 write("alarm_engine.h", """
     #define FAULT_ESP 128u
+    typedef struct { unsigned faults,transitions,warmup_remaining_ms;unsigned char state,kind; } alarm_status_t;
     void alarm_selftest_report(unsigned mask,int passed);
+    void alarm_get_status(alarm_status_t *status);
 """)
 write(
     "sensor.h",
@@ -160,6 +162,7 @@ write(
     #include "esp8266.h"
     #include "datahub.h"
     #include "storage.h"
+    #include "alarm_engine.h"
 
     static uint32_t now;
     static char tx[256];
@@ -212,12 +215,14 @@ write(
     }
     uint32_t rtc_get(void) { return 1234u; }
     void alarm_selftest_report(unsigned mask,int passed){assert(mask==128u && passed);}
+    void alarm_get_status(alarm_status_t *s){memset(s,0,sizeof(*s));s->state=2;}
     static uint32_t config_seq=1;
     int storage_get_fields(int32_t v[CFG_FIELD_COUNT],storage_status_t *s){
         static const int32_t values[]={50,100,3000,10000,1};
         memcpy(v,values,sizeof(values));memset(s,0,sizeof(*s));
         s->ready=1;s->config_seq=config_seq;return 0;
     }
+    static int telemetry_temp=20;
     int datahub_snapshot(datahub_snapshot_t *out) {
         unsigned i;
         if (!out) return -1;
@@ -227,6 +232,7 @@ write(
             out->sensors[i].value = (int32_t)(20 + i);
         }
         out->sensors[SENSOR_DHT11].auxiliary = 550;
+        out->sensors[SENSOR_DHT11].value=telemetry_temp;
         return 0;
     }
 
@@ -406,12 +412,15 @@ write(
         assert(has_bytes("/config") && has_bytes("\"seq\":2") && has_bytes("\"temp\":50"));
         assert((unsigned char)tx[0]==0x31u); /* retained committed config */
         /* A fresh telemetry transaction is fixed-order and contains valid JSON. */
-        now += 5000u;
+        now += 2000u;
+        telemetry_temp=9;
         network_poll(now);
         assert(strstr(tx, "AT+CIPSEND=") == tx);
+        telemetry_temp=1000; /* Different digits before prompt must not rebuild. */
         net_on_rx_prompt();
         network_poll(now);
         assert(has_bytes("\"ts\":") && has_bytes("\"temp\":"));
+        assert(has_bytes("\"temp\":9,"));
         assert(find_bytes("\"ts\":") < find_bytes("\"temp\":"));
         assert(find_bytes("\"temp\":") < find_bytes("\"hum\":"));
         assert(find_bytes("\"hum\":") < find_bytes("\"distance\":"));
@@ -420,6 +429,8 @@ write(
         assert(find_bytes("\"smoke\":") < find_bytes("\"air\":"));
         assert(find_bytes("\"air\":") < find_bytes("\"wifi\":"));
         assert(find_bytes("\"wifi\":") < find_bytes("\"mqtt\":"));
+        assert(find_bytes("\"mqtt\":") < find_bytes("\"mode\":"));
+        assert(has_bytes("\"state\":2") && has_bytes("\"fault\":0") && has_bytes("\"q\":31"));
         line("SEND OK");
         network_poll(now);
 

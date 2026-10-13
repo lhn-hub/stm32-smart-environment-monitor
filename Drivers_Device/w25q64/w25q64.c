@@ -8,6 +8,34 @@
 #include <string.h>
 static uint32_t jedec,erases;
 static int identified;
+#if !APP_CRITICAL_AUDIT
+static uint32_t log_writes[FLASH_LOG_SECTORS],log_erases[FLASH_LOG_SECTORS];
+static void wear(uint32_t address,int erase)
+{
+    if(address>=FLASH_LOG_ADDR && address<FLASH_LOG_ADDR+FLASH_LOG_SIZE){
+        unsigned sector=(address-FLASH_LOG_ADDR)/W25Q_SECTOR_SIZE;
+        if(erase)++log_erases[sector];else ++log_writes[sector];
+    }
+}
+#else
+#define wear(address,erase) ((void)0)
+#endif
+void w25q_wear_report(uint32_t now)
+{
+#if !APP_CRITICAL_AUDIT
+    static uint32_t report_at;static unsigned sector;
+    /* Sole Flash owner LogTask prints one sector per second, without Flash IO. */
+    if(now-report_at>=1000u){
+        report_at=now;
+        LOGI("WEAR sector=%u addr=%06lX writes=%lu erases=%lu",sector,
+             (unsigned long)(FLASH_LOG_ADDR+sector*W25Q_SECTOR_SIZE),
+             (unsigned long)log_writes[sector],(unsigned long)log_erases[sector]);
+        sector=(sector+1u)%FLASH_LOG_SECTORS;
+    }
+#else
+    (void)now;
+#endif
+}
 /* W25Q protocol opcodes/status bits. */
 enum { CMD_ID=0x9f,CMD_READ=3,CMD_PP=2,CMD_ERASE=0x20,CMD_WREN=6,CMD_SR=5,SR_BUSY=1,SR_WEL=2 };
 /* Higher-priority polling tasks can exhaust the HAL wall-clock timeout. */
@@ -93,6 +121,7 @@ int w25q_program(uint32_t a,const void *data,size_t n)
     if(!r){select_flash(1);r=header(CMD_PP,a);if(!r)r=tx(p,n);select_flash(0);if(!r)r=wait_ready(APP_FLASH_PROGRAM_MS);}
     for(off=0;!r&&off<n;off+=k){k=n-off;if(k>sizeof(verify))k=sizeof(verify);
         r=raw_read(a+(uint32_t)off,verify,k);if(!r&&memcmp(verify,p+off,k))r=-1;}
+    if(!r)wear(a,0);
     spi_bus_give();return r;
 }
 int w25q_erase(uint32_t a)
@@ -107,6 +136,6 @@ int w25q_erase(uint32_t a)
     if(!r)r=wait_ready(APP_FLASH_ERASE_MS);
     for(off=0;!r&&off<W25Q_SECTOR_SIZE;off+=sizeof(b)){
         r=raw_read(a+off,b,sizeof(b));for(i=0;!r&&i<sizeof(b);i++)if(b[i]!=0xff)r=-1;}
-    if(!r)++erases;
+    if(!r){++erases;wear(a,1);}
     spi_bus_give();return r;
 }

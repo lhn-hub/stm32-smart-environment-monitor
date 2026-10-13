@@ -88,6 +88,8 @@ static net_reply_t pending_reply;
 static uint8_t reboot_reply_sent;
 static uint8_t raw_tx_stage;
 static uint16_t raw_tx_length;
+/* CIPSEND overwrites only this prefix of the owned DMA buffer. */
+static uint8_t raw_header[20];
 static uint8_t mqtt_rx_type;
 static uint8_t mqtt_rx_stage;
 static uint8_t mqtt_rx_flags;
@@ -717,7 +719,7 @@ static uint8_t raw_packet_kind;
 
 static int mqtt_build_raw_packet(uint8_t kind)
 {
-    char topic[NET_TOPIC_SIZE], payload[190];
+    char topic[NET_TOPIC_SIZE], payload[224];
     if (kind == MQTT_PKT_CONNECT) return mqtt_build_connect();
     if (kind == MQTT_PKT_SUBSCRIBE) return mqtt_build_subscribe();
     if (kind == MQTT_PKT_STATUS) {
@@ -751,17 +753,22 @@ static int mqtt_build_raw_packet(uint8_t kind)
     {
         datahub_snapshot_t snapshot;
         const sensor_value_t *t, *u, *r, *s, *a;
-        network_status_t net;
+        alarm_status_t alarm;unsigned quality=0,i;
         if (datahub_snapshot(&snapshot) || build_topic(topic, sizeof(topic), "telemetry"))
             return -1;
         t=&snapshot.sensors[SENSOR_DHT11]; u=&snapshot.sensors[SENSOR_DISTANCE];
         r=&snapshot.sensors[SENSOR_RADAR]; s=&snapshot.sensors[SENSOR_SMOKE];
-        a=&snapshot.sensors[SENSOR_AIR]; network_get_status(&net);
-        snprintf(payload, sizeof(payload),
-                 "{\"ts\":%lu,\"temp\":%ld,\"hum\":%ld,\"distance\":%ld,\"human\":%ld,\"smoke\":%ld,\"air\":%ld,\"wifi\":%u,\"mqtt\":%u}",
+        a=&snapshot.sensors[SENSOR_AIR];alarm_get_status(&alarm);
+        for(i=0;i<5u;i++)
+            if(snapshot.sensors[i].quality==SENSOR_GOOD)quality|=1u<<i;
+        if(t->auxiliary_quality!=SENSOR_GOOD)quality&=~1u;
+        if(snprintf(payload, sizeof(payload),
+                 "{\"ts\":%lu,\"temp\":%ld,\"hum\":%ld,\"distance\":%ld,\"human\":%ld,\"smoke\":%ld,\"air\":%ld,\"wifi\":%u,\"mqtt\":%u,\"mode\":%ld,\"state\":%u,\"alarm\":%u,\"fault\":%lu,\"q\":%u}",
                  (unsigned long)rtc_get(), (long)t->value, (long)t->auxiliary,
                  (long)u->value, (long)r->value, (long)s->value, (long)a->value,
-                 (unsigned)net.wifi, (unsigned)net.mqtt);
+                 (unsigned)status.wifi, (unsigned)status.mqtt,(long)config_tx_fields[CFG_MODE],
+                 (unsigned)alarm.state,(unsigned)alarm.kind,(unsigned long)alarm.faults,quality)>=(int)sizeof(payload))
+            return -1;
         return mqtt_build_publish(topic, payload, 0u);
     }
 }
@@ -776,7 +783,9 @@ static int mqtt_raw_begin(uint8_t kind, uint32_t now)
     raw_packet_kind = kind;
     raw_tx_length = (uint16_t)length;
     tx = bsp_net_tx_buffer(&cap);
-    if (snprintf(tx, cap, "AT+CIPSEND=%u\r\n", (unsigned)raw_tx_length) >= (int)cap ||
+    if(cap<sizeof(raw_header))return -1;
+    memcpy(raw_header,tx,sizeof(raw_header));
+    if (snprintf(tx, sizeof(raw_header), "AT+CIPSEND=%u\r\n", (unsigned)raw_tx_length) >= (int)sizeof(raw_header) ||
         at_send_cmd(tx, ">", NET_TCP_TIMEOUT, 1u)) return -1;
     raw_tx_stage = RAW_TX_WAIT_PROMPT;
     return 0;
@@ -790,8 +799,10 @@ static int mqtt_raw_poll(uint32_t now)
     if (!result) return 1;
     if (result < 0) { raw_tx_stage = RAW_TX_NONE; return -1; }
     if (raw_tx_stage == RAW_TX_WAIT_PROMPT) {
-        if (mqtt_build_raw_packet(raw_packet_kind) != (int)raw_tx_length ||
-            bsp_net_send_buffer(raw_tx_length)) {
+        char *tx=bsp_net_tx_buffer(NULL);
+        /* Keep the same snapshot and length advertised before the prompt. */
+        memcpy(tx,raw_header,sizeof(raw_header));
+        if (bsp_net_send_buffer(raw_tx_length)) {
             raw_tx_stage = RAW_TX_NONE; return -1;
         }
         at_request.active = 1; at_request.done = 0; at_request.result = 0;

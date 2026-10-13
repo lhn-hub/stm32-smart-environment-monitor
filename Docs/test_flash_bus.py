@@ -45,12 +45,22 @@ code=r'''
 #include <assert.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include "app_config.h"
 #include "bus_arbiter.h"
 #include "w25q64.h"
 #include "kvstore.h"
 GPIO_TypeDef ga={0},gb={1};Timer tim3;int hspi1;
-static uint8_t mem[8192];
+static uint8_t mem[FLASH_LOG_END_EXCLUSIVE];
+static unsigned wear_writes,wear_erases;
+void bsp_log(const char *l,const char *f,...){
+ va_list args;(void)l;
+ if(strstr(f,"WEAR")){
+  unsigned sector;va_start(args,f);sector=va_arg(args,unsigned);(void)va_arg(args,unsigned long);
+  if(!sector){wear_writes=(unsigned)va_arg(args,unsigned long);wear_erases=(unsigned)va_arg(args,unsigned long);}
+  va_end(args);
+ }
+}
 static uint32_t now,address,id=0xef4017;static unsigned cmd,count,selected,enabled,locked,fault,deny,ipsr,primask,basepri;
 static unsigned mode[16],level[16],wel,busy,stuck,fail_tx,fail_rx,corrupt,stall_address;
 static unsigned suspended,deferred,preemptions,preempt_ms,trip_fault;
@@ -148,6 +158,10 @@ int main(void){
   assert(kv_save(&config)==-1);assert(!kv_load(&config)&&config.seq==2);safe();
   puts("PASS injected HAL TX/RX timeouts still fail closed; failed scan prevents writes until rescan, no data erased");
  }
+ assert(!w25q_erase(FLASH_LOG_ADDR));assert(!w25q_program(FLASH_LOG_ADDR,data,40));
+ assert(w25q_program(FLASH_LOG_ADDR,data,40)==-1);
+ w25q_wear_report(now+1000u);assert(wear_writes==1&&wear_erases==1);
+ puts("PASS log-sector wear: verified erase/program counted, rejected write excluded");
  puts("PASS actual W25Q/arbiter: identity, WEL, page/alignment validation, readback, busy timeout, failure cleanup, no MISO output, fault/ISR guards");return 0;
 }
 '''

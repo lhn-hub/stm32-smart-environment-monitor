@@ -15,4 +15,5 @@ int w25q_program(uint32_t address,const void *data,size_t length);
 int w25q_erase(uint32_t address);
 /** @brief Successful erases since MCU boot; not a lifetime endurance counter. */
 uint32_t w25q_erases(void);
+void w25q_wear_report(uint32_t now);
 #endif

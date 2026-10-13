@@ -163,13 +163,13 @@ run('mq_enabled_logic_only',r'''
 #include "../../Drivers_Device/mq_gas/mq_gas.c"
 int main(void){
  sensor_value_t v={0};sensor_limits_t l={3000,10000};now_us=0;
- mq_init(SENSOR_SMOKE);gpio_b.IDR&=~MQ_SMOKE_PIN;now_ms=100;
+ mq_init(SENSOR_SMOKE);MQ_SMOKE_PORT->IDR&=~MQ_SMOKE_PIN;now_ms=100;
  assert(!mq_read(SENSOR_SMOKE,&v));assert(v.value==0&&v.quality==SENSOR_STALE&&v.auxiliary==0);
  now_ms=APP_MQ_WARMUP_MS;mq_read(SENSOR_SMOKE,&v);assert(!v.value&&!(v.flags&SENSOR_WARMUP));
  now_ms+=2999;mq_read(SENSOR_SMOKE,&v);assert(!v.value);now_ms++;mq_read(SENSOR_SMOKE,&v);assert(v.value==1);
- gpio_b.IDR|=MQ_SMOKE_PIN;mq_read(SENSOR_SMOKE,&v);assert(v.auxiliary==1&&v.value==1);
+ MQ_SMOKE_PORT->IDR|=MQ_SMOKE_PIN;mq_read(SENSOR_SMOKE,&v);assert(v.auxiliary==1&&v.value==1);
  now_ms+=10000;mq_read(SENSOR_SMOKE,&v);assert(v.value==0);
- l.confirm_ms=1000;mq_ioctl(SENSOR_SMOKE,SENSOR_IOCTL_LIMITS,&l);gpio_b.IDR&=~MQ_SMOKE_PIN;
+ l.confirm_ms=1000;mq_ioctl(SENSOR_SMOKE,SENSOR_IOCTL_LIMITS,&l);MQ_SMOKE_PORT->IDR&=~MQ_SMOKE_PIN;
  mq_read(SENSOR_SMOKE,&v);now_ms+=1000;mq_read(SENSOR_SMOKE,&v);assert(v.value==1);
  now_ms=20;mq_read(SENSOR_SMOKE,&v);assert(v.warmup_remaining_ms==0);
  puts("PASS host-only enabled MQ path: raw DO, warmup suppression, confirm/release, runtime config, no repeated warmup after tick wrap");return 0;

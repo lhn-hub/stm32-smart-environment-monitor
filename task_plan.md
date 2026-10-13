@@ -1,5 +1,14 @@
 # sms-hub M0 工程脚手架
 
+### Phase 19: M8云看板与加固
+**Status:** in_progress
+- 用户授权单文件MQTT.js/canvas看板、HardFault/栈钩子诊断、创建结果检查、临界区逐处审计和24h统计。
+- 复用现有协议/任务/heap统计，保持ESP原固件及MQ安全门禁；不实施MAX30102、STOP、OTA可选项。
+- 检查5V/GND接口及DO转换，软件新增预算必须低于60KB/20KB；交付真实浏览器验证和最终map。
+- 24h/手机/硬件波形与栈破坏需实物证据；M7验收未闭环，不提前发布v0.9。
+- 软件/主机/浏览器/WSS验证通过；正常61036B/20152B，栈测试61344B/20152B，审计61332B/20360B，均零错误/零警告。
+- 额外两MQ启用正常构建61112B/20152B通过，未烧录；最终MQ/栈注入/审计宏均0。健康接线与实物DoD仍待确认。
+
 ### Phase 18: M7应用集成与报警状态机
 **Status:** in_progress
 - 复用现有 DataHub、AlarmTask、controls、KV、MQTT事件缓存和菜单，不新增任务或堆对象。
@@ -108,7 +117,7 @@ M4软件、主机故障注入和编译完成；2026-10-11日志已确认真实W2
 按用户 M0、附件 A/B 完成 CubeMX/Keil 工程，真实编译与 DAP 验证后提交并标记 v0.1。
 
 ## Current Phase
-Phase18：M7应用集成与报警状态机。基线为M6核心链路提交0df5c6f，Flash56172B/RAM19672B；ESP保持原固件，MQ禁用及M6剩余实机验收约束保留。
+Phase19：M8云看板与加固，软件基线e912a93，Flash59952B/RAM19800B。MQ两模块5V供电已由资料确认，DO仍需转换；MDK uvoptx用户变更保留。
 
 ### Phase 1: 工具链与硬件约束核查
 **Status:** complete
@@ -126,7 +135,7 @@ Phase18：M7应用集成与报警状态机。基线为M6核心链路提交0df5c6
 - 完成后提交 [M0] 工程:建立脚手架，打 tag v0.1。
 
 ## Next Step
-按Docs/M7-acceptance.md先做T-01故障路径，核对MQ电平/PB0共享接线；健康路径和发布标签等待实机前提及验收结果。
+按Docs/M8-wiring.md确认IO1/IO2两路转换电压，启用MQ并下载正常固件，再按M8-acceptance.md完成实板/手机/24h/临界区验收。
 
 ### Phase 6: M3传感器与DataHub
 **Status:** in_progress
@@ -148,6 +157,8 @@ Phase18：M7应用集成与报警状态机。基线为M6核心链路提交0df5c6
 - 保留TIM4及校准默认禁用裁决；M1温度范围DoD仍存在冲突，待明确验收标准。
 
 ## Errors Encountered
+- M8审计初版只枚举业务/RTOS入口，收尾发现HAL I2C还有8处PRIMASK；补全清单。实际map证实Master_Receive/Mem_Read均被移除，不把未链接函数标作已经板测。
+- M8 Flash驱动新增磨损日志后主机桩缺bsp_log，补日志计数桩及成功/失败磨损断言；DWT回归因同一行if/赋值触发-Werror，拆行修复，不关闭警告。正常连接重试曾遗留旧connack timeout文字，connect成功时清理错误。
 - 末次空白检查临时禁用core.autocrlf导致CRLF文件被逐行误报；恢复仓库正常换行策略并允许cr-at-eol检查，不重写源码或原始Keil证据。
 - 恢复上下文后误用App/sensors和BSP/controls路径，读取失败；用rg文件清单定位Drivers_Device/sensor.*与实际controls文件，未新建替代模块。Windows rg不展开App/storage*路径，改用明确文件名。
 - 扩展M7测试时一次补丁引用了不存在的断言上下文，整批未应用；读实际局部行后使用准确锚点完成扩展。

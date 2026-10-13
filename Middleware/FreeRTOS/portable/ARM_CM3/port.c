@@ -361,6 +361,9 @@ void vPortEndScheduler( void )
 void vPortEnterCritical( void )
 {
 	portDISABLE_INTERRUPTS();
+#if APP_CRITICAL_AUDIT
+	bsp_audit_enter((unsigned)(uintptr_t)__builtin_return_address(0));
+#endif
 	uxCriticalNesting++;
 
 	/* This is not the interrupt safe version of the enter critical function so
@@ -377,6 +380,9 @@ void vPortEnterCritical( void )
 
 void vPortExitCritical( void )
 {
+#if APP_CRITICAL_AUDIT
+	bsp_audit_exit();
+#endif
 	configASSERT( uxCriticalNesting );
 	uxCriticalNesting--;
 	if( uxCriticalNesting == 0 )
@@ -404,7 +410,13 @@ void xPortPendSVHandler( void )
 	"	stmdb sp!, {r3, r14}				\n"
 	"	mov r0, %0							\n"
 	"	msr basepri, r0						\n"
+#if APP_CRITICAL_AUDIT
+	"	bl bsp_audit_switch_enter			\n"
+#endif
 	"	bl vTaskSwitchContext				\n"
+#if APP_CRITICAL_AUDIT
+	"	bl bsp_audit_exit					\n"
+#endif
 	"	mov r0, #0							\n"
 	"	msr basepri, r0						\n"
 	"	ldmia sp!, {r3, r14}				\n"
@@ -430,6 +442,9 @@ void xPortSysTickHandler( void )
 	save and then restore the interrupt mask value as its value is already
 	known. */
 	portDISABLE_INTERRUPTS();
+#if APP_CRITICAL_AUDIT
+	bsp_audit_enter(0xfffffff0u);
+#endif
 	{
 		/* Increment the RTOS tick. */
 		if( xTaskIncrementTick() != pdFALSE )
@@ -439,6 +454,9 @@ void xPortSysTickHandler( void )
 			portNVIC_INT_CTRL_REG = portNVIC_PENDSVSET_BIT;
 		}
 	}
+#if APP_CRITICAL_AUDIT
+	bsp_audit_exit();
+#endif
 	portENABLE_INTERRUPTS();
 }
 /*-----------------------------------------------------------*/

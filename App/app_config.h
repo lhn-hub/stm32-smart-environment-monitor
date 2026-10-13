@@ -9,7 +9,10 @@
 #ifndef APP_NETWORK_PROVISION
 #define APP_NETWORK_PROVISION 0
 #endif
-#define APP_FW_VERSION "0.8.0-dev"
+#define APP_FW_VERSION "0.9.0-dev"
+#ifndef APP_CRITICAL_AUDIT
+#define APP_CRITICAL_AUDIT 0
+#endif
 #ifndef APP_WIFI_SSID
 #define APP_WIFI_SSID ""
 #endif
@@ -25,7 +28,7 @@
 #define APP_MQTT_TOPIC_CMD APP_MQTT_TOPIC_ROOT "/cmd"
 #define APP_MQTT_TOPIC_RESPONSE APP_MQTT_TOPIC_ROOT "/cmd/resp"
 #define APP_MQTT_LWT "offline"
-#define APP_TELEMETRY_MS DEF_TELEMETRY_PERIOD_MS
+#define APP_TELEMETRY_MS 2000u
 #define APP_MQ_WARMUP_MS (MQ_WARMUP_S * 1000u)
 /* Stack sizes are StackType_t words (4 bytes on Cortex-M3). */
 #define APP_MONITOR_PRIORITY 5u
@@ -119,7 +122,7 @@
 #define APP_SENSOR_STALE_MULTIPLIER 3u
 #define APP_DATAHUB_LOCK_MS 5u
 #define APP_FILTER_WINDOW 5u
-/* Enable only AFTER board-level5V->3.3V solution. Software does not protect PB0. */
+/* Enable only AFTER confirming the translated DO wiring in Docs/M8-wiring.md. */
 #define APP_MQ_DO_ENABLED 0
 #define APP_SENSOR_UNKNOWN (-1)
 #define APP_RADAR_SETTLE_MS 1000u
@@ -132,7 +135,12 @@
 #define APP_FLASH_POLL_MS 2u
 #define APP_FLASH_VERIFY_CHUNK 32u
 #define APP_STORAGE_QUEUE 4u
+#if APP_CRITICAL_AUDIT
+/* Diagnostic image only: free RAM for timings; network event ring stays 20. */
+#define APP_STORAGE_RECENT 4u
+#else
 #define APP_STORAGE_RECENT 20u
+#endif
 #define APP_STORAGE_LOCK_MS 10u
 #define APP_CONFIG_MAGIC 0x534D5343u
 #define APP_CONFIG_VERSION 1u
@@ -165,4 +173,8 @@
 #ifndef APP_M7_TEST_ENABLED
 #define APP_M7_TEST_ENABLED 0
 #endif
+#ifndef APP_M8_TEST_ENABLED
+#define APP_M8_TEST_ENABLED 0
+#endif
+#define APP_BURN_REPORT_MS 60000u
 #endif

@@ -125,11 +125,12 @@ extern "C" {
 #define RADAR_ACTIVE_LEVEL         GPIO_PIN_SET
 #define RADAR_DEBOUNCE_MS          1000u
 
-/* MQ2/MQ135 DO; PB0 stays input even though also connected to AIN2. */
-#define MQ_SMOKE_PORT              GPIOB
-#define MQ_SMOKE_PIN               GPIO_PIN_0
-#define MQ_AIR_PORT                GPIOB
-#define MQ_AIR_PIN                 GPIO_PIN_14
+/* Expansion IO1/IO2 DO pins; AO stays disconnected from shared SPI pins.
+ * Use 5V supplies and translated DO, never connect the USB_DEVICE socket. */
+#define MQ_SMOKE_PORT              GPIOA
+#define MQ_SMOKE_PIN               GPIO_PIN_12
+#define MQ_AIR_PORT                GPIOA
+#define MQ_AIR_PIN                 GPIO_PIN_11
 #define MQ_ALARM_LEVEL             GPIO_PIN_RESET
 #define MQ_SCAN_PERIOD_MS          200u
 /* Module manual recommends at least five minutes; not a substitute for aging. */

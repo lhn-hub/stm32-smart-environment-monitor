@@ -1,6 +1,15 @@
-param([ValidateSet('M0','M1','M2','M3','M4','M5','M5-stress','M6','M7','M7-test')][string]$Stage='M7')
+param([ValidateSet('M0','M1','M2','M3','M4','M5','M5-stress','M6','M7','M7-test','M8','M8-test','M8-audit')][string]$Stage='M8')
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
+if ($Stage -like 'M8*') {
+    $config = Get-Content -LiteralPath "$projectRoot/App/app_config.h" -Raw
+    $test = $config -match '(?m)^#define APP_M8_TEST_ENABLED 1\s*$'
+    $audit = $config -match '(?m)^#define APP_CRITICAL_AUDIT 1\s*$'
+    if ($test -ne ($Stage -eq 'M8-test') -or $audit -ne ($Stage -eq 'M8-audit') -or
+        $config -match '(?m)^#define APP_(M7_TEST|M5_STRESS|STORAGE_STRESS|WATCHDOG_TEST)_ENABLED 1\s*$') {
+        throw 'M8 build flags do not match Stage; unrelated bench flags must be off.'
+    }
+}
 if ($Stage -in @('M7','M7-test')) {
     $config = Get-Content -LiteralPath "$projectRoot/App/app_config.h" -Raw
     $enabled = $config -match '(?m)^#define APP_M7_TEST_ENABLED 1\s*$'

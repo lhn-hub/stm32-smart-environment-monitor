@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SMS Hub · 环境与报警</title>
+<style>
+:root{font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif;color:#1d302c;background:#f3f6f5;color-scheme:light;--green:#11745c;--line:#dce4e1;--muted:#546962;--red:#a42642;--blue:#236a9e;--orange:#ac4c23}
+*{box-sizing:border-box;letter-spacing:0}body{margin:0}button,input{font:inherit}button,input[type=text],input[type=number]{min-height:42px;border:1px solid #a8b9b2;border-radius:5px;background:white;color:inherit;padding:8px 12px}button{cursor:pointer;font-weight:600}button:hover{border-color:var(--green);background:#eef7f3}button:disabled{opacity:.5;cursor:default}button.primary{background:var(--green);color:white;border-color:var(--green)}button:focus-visible,input:focus-visible{outline:3px solid #e49b32;outline-offset:3px}input[type=range]{width:100%;accent-color:var(--green);min-height:36px}
+header{background:white;border-bottom:1px solid var(--line)}.wrap{max-width:1240px;margin:auto;padding:20px 28px}.top{display:flex;gap:20px;align-items:center;justify-content:space-between;flex-wrap:wrap}h1{font-size:22px;margin:0;font-weight:700}h1 small{display:block;font-size:12px;color:var(--muted);font-weight:400;margin-top:5px}form{display:flex;gap:8px;align-items:center;flex-wrap:wrap}form label{font-size:13px}#dev{width:230px;max-width:100%}.connection{font-size:13px;color:var(--muted);display:flex;gap:18px;flex-wrap:wrap;margin-top:16px}.dot{width:8px;height:8px;display:inline-block;border-radius:50%;background:#85958e;margin-right:7px}.dot.online{background:var(--green)}.dot.error{background:var(--red)}
+.alarm-strip{display:flex;justify-content:space-between;gap:16px;align-items:center;border-left:4px solid var(--green);padding:14px 18px;background:#e8f3ee;margin:4px 0 20px}.alarm-strip[data-tone=error]{border-color:var(--red);background:#fbeef1}.alarm-strip strong{font-size:17px}.alarm-strip p{font-size:13px;margin:5px 0 0;color:var(--muted)}.mono{font-family:Consolas,"SFMono-Regular",monospace;font-variant-numeric:tabular-nums}.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.metric{padding:16px 18px;background:white;border:1px solid var(--line);border-radius:6px;min-height:120px;min-width:0}.metric .label{font-size:13px;color:var(--muted)}.metric .value{font-family:Consolas,"SFMono-Regular",monospace;font-size:28px;line-height:1.4;margin-top:9px;overflow-wrap:anywhere}.metric .value.text{font-family:inherit;font-size:21px}.metric small{font-size:12px;color:var(--muted)}.metric[data-bad=true]{border-left:3px solid var(--red)}
+section{border-top:1px solid var(--line);margin-top:24px;padding-top:20px}h2{font-size:16px;margin:0 0 14px}.graphs{display:grid;grid-template-columns:1fr 1fr;gap:28px}.graph-title{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.legend{font-size:12px;display:flex;gap:14px}.legend span:before{content:"";display:inline-block;width:14px;height:3px;margin:0 5px 3px 0;background:var(--orange)}.legend .hum:before{background:var(--green)}.legend .dist:before{background:var(--blue)}.canvas-wrap{height:220px;width:100%}canvas{width:100%;height:100%;display:block}
+.controls{display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px}.control label{display:flex;align-items:center;justify-content:space-between;font-size:14px}.control footer{display:flex;gap:8px;align-items:center;margin-top:8px}.control footer button{flex:1}.control input[type=number]{width:110px}.toolbar{display:flex;gap:8px;flex-wrap:wrap}#control-note{font-size:13px;color:var(--muted);margin:0 0 16px}#response{min-height:22px;font-size:13px;margin-top:14px;color:var(--green)}#response.error{color:var(--red)}
+.log-head{display:flex;justify-content:space-between;align-items:center}table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px}th{text-align:left;color:var(--muted);font-weight:400}th,td{padding:10px 8px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}th:first-child{width:105px}th:nth-child(2){width:95px}#empty{color:var(--muted);font-size:13px;padding:14px 8px}body>footer{font-size:12px;color:var(--muted);border-top:1px solid var(--line);margin-top:14px}#error{color:var(--red);font-size:13px;min-height:20px;margin:10px 0 0}
+@media(max-width:760px){.wrap{padding:18px 16px}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.graphs{grid-template-columns:1fr;gap:22px}.controls{grid-template-columns:1fr;gap:20px}form{width:100%}form label{width:100%}#dev{flex:1;min-width:120px}.alarm-strip{align-items:flex-start}.metric{padding:14px;min-height:115px}.connection{gap:10px}.canvas-wrap{height:200px}.toolbar button{flex:1}.alarm-strip strong{font-size:16px}}
+</style>
+<header>
+  <div class="wrap">
+    <div class="top">
+      <h1>SMS Hub <small>环境与报警</small></h1>
+      <form id="connect-form">
+        <label for="dev">设备</label>
+        <input id="dev" name="dev" value="sms01" maxlength="32" pattern="[A-Za-z0-9_-]{1,32}" autocomplete="off" spellcheck="false" required>
+        <button type="submit" class="primary" id="connect">连接</button>
+        <button type="button" id="disconnect" disabled>断开</button>
+      </form>
+    </div>
+    <div class="connection" aria-live="polite">
+      <span><i class="dot" id="broker-dot"></i><span id="broker-state">正在加载连接组件</span></span>
+      <span id="device-state">设备状态未知</span>
+      <span id="freshness">尚无数据</span>
+      <span class="mono" id="clock">--</span>
+    </div>
+    <p id="error" role="alert"></p>
+  </div>
+</header>
+<main class="wrap">
+  <div class="alarm-strip" id="alarm-strip">
+    <div><strong id="alarm-title">等待设备数据</strong><p id="alarm-detail">--</p></div>
+    <div class="mono" id="fault-code">--</div>
+  </div>
+  <div class="metrics">
+    <article class="metric" id="card-temp"><div class="label">温度</div><div class="value" id="temp">--</div><small>°C</small></article>
+    <article class="metric" id="card-hum"><div class="label">湿度</div><div class="value" id="hum">--</div><small>% RH</small></article>
+    <article class="metric" id="card-distance"><div class="label">距离</div><div class="value" id="distance">--</div><small>cm</small></article>
+    <article class="metric" id="card-human"><div class="label">人员</div><div class="value text" id="human">--</div><small>雷达</small></article>
+    <article class="metric" id="card-smoke"><div class="label">烟雾</div><div class="value text" id="smoke">--</div><small>MQ2</small></article>
+    <article class="metric" id="card-air"><div class="label">空气</div><div class="value text" id="air">--</div><small>MQ135</small></article>
+    <article class="metric"><div class="label">模式</div><div class="value text" id="mode">--</div><small id="state">--</small></article>
+    <article class="metric"><div class="label">报警</div><div class="value text" id="alarm">--</div><small id="quality">--</small></article>
+  </div>
+  <section aria-label="趋势">
+    <div class="graphs">
+      <div><div class="graph-title"><h2>温湿度 · 最近 5 分钟</h2><div class="legend"><span>°C</span><span class="hum">% RH</span></div></div><div class="canvas-wrap"><canvas id="climate" role="img" aria-label="温度与湿度滚动趋势"></canvas></div></div>
+      <div><div class="graph-title"><h2>距离 · 最近 5 分钟</h2><div class="legend"><span class="dist">cm</span></div></div><div class="canvas-wrap"><canvas id="range" role="img" aria-label="距离滚动趋势"></canvas></div></div>
+    </div>
+  </section>
+  <section aria-labelledby="controls-title">
+    <div class="graph-title"><h2 id="controls-title">设备控制</h2><div class="toolbar"><button id="arm-on" disabled>布防</button><button id="arm-off" disabled>撤防</button></div></div>
+    <p id="control-note">等待在线设备与有效数据</p>
+    <div class="controls">
+      <div class="control"><label for="fan">风扇 <output id="fan-value" for="fan">0%</output></label><input type="range" id="fan" min="0" max="100" value="0" disabled><footer><button id="fan-send" disabled>设置风扇</button><button id="fan-stop" disabled>停止</button></footer></div>
+      <div class="control"><label for="servo">舵机 <output id="servo-value" for="servo">0°</output></label><input type="range" id="servo" min="0" max="180" value="0" disabled><footer><button id="servo-send" disabled>设置角度</button><button id="servo-zero" disabled>回零</button></footer></div>
+      <div class="control"><label for="buzzer">蜂鸣时长 <span>ms</span></label><footer><input type="number" id="buzzer" value="300" min="1" max="10000" step="100" disabled><button id="buzzer-send" disabled>蜂鸣</button></footer></div>
+    </div>
+    <div id="response" role="status" aria-live="polite"></div>
+  </section>
+  <section aria-labelledby="events-title">
+    <div class="log-head"><h2 id="events-title">事件与回执</h2><button id="clear-events" title="清空本页记录" aria-label="清空本页记录">清空</button></div>
+    <table><thead><tr><th scope="col">接收时间</th><th scope="col">类型</th><th scope="col">内容</th></tr></thead><tbody id="events"></tbody></table>
+    <div id="empty">暂无事件</div>
+  </section>
+</main>
+<footer><div class="wrap">broker.emqx.io:8084 · WSS　<span id="topic" class="mono">smshub/sms01</span></div></footer>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const stateNames=['自检','故障','已撤防','预热中','已布防','报警'];
+const alarmNames=['无报警','空气提示','入侵报警','火灾报警'];
+let client=null,generation=0,root='',deviceOnline=false,lastReceived=0,data=null,pending=null,config=null;
+const points=[]; const maxAge=8000;
+const integer=(v,min,max)=>Number.isInteger(v)&&v>=min&&v<=max;
+const text=(id,value)=>{$(id).textContent=value;};
+function eventRow(kind,value){
+  const row=document.createElement('tr');
+  for(const v of [new Date().toLocaleTimeString('zh-CN',{hour12:false}),kind,value]){
+    const cell=document.createElement('td');cell.textContent=v;row.append(cell);
+  }
+  $('events').prepend(row);
+  while($('events').children.length>40)$('events').lastChild.remove();
+  $('empty').hidden=true;
+}
+function reply(message,error=false){text('response',message);$('response').classList.toggle('error',error);}
+function resetData(){
+  deviceOnline=false;lastReceived=0;data=null;config=null;pending=null;points.length=0;
+  for(const id of ['temp','hum','distance','human','smoke','air','mode','state','alarm','quality','clock','fault-code'])text(id,'--');
+  for(const id of ['temp','hum','distance','human','smoke','air'])$('card-'+id).dataset.bad='false';
+  text('alarm-title','等待设备数据');text('alarm-detail','--');text('device-state','设备状态未知');
+  $('alarm-strip').dataset.tone='';reply('');renderHealth();drawGraphs();
+}
+function renderHealth(){
+  const fresh=lastReceived>0&&Date.now()-lastReceived<maxAge;
+  const online=Boolean(client&&client.connected&&deviceOnline&&fresh&&data);
+  const manual=online&&data.state===2&&data.mode===0&&data.fault===0&&data.q===31;
+  text('freshness',lastReceived?'更新于 '+Math.floor((Date.now()-lastReceived)/1000)+' 秒前':'尚无数据');
+  if(data&&!fresh){text('alarm-title','数据已过期');$('alarm-strip').dataset.tone='error';}
+  for(const id of ['arm-on','arm-off'])$(id).disabled=!online||Boolean(pending);
+  for(const id of ['fan','fan-send','fan-stop','servo','servo-send','servo-zero','buzzer','buzzer-send'])$(id).disabled=!manual||Boolean(pending);
+  text('control-note',!online?'等待在线设备与有效数据':!manual?'执行器控制需撤防、无故障且传感器数据有效':pending?'等待设备回执':'已撤防，可控制执行器');
+  if(pending&&Date.now()-pending.at>12000){pending=null;reply('回执超时，执行结果未确认',true);renderHealth();}
+}
+function validTelemetry(t){
+  return t&&typeof t==='object'&&!Array.isArray(t)&&
+    integer(t.ts,0,4294967295)&&integer(t.temp,-32768,600)&&integer(t.hum,-32768,1000)&&
+    integer(t.distance,-32768,10000)&&integer(t.human,-1,1)&&integer(t.smoke,-1,1)&&integer(t.air,-1,1)&&
+    integer(t.wifi,0,1)&&integer(t.mqtt,0,1)&&integer(t.mode,0,1)&&integer(t.state,0,5)&&
+    integer(t.alarm,0,3)&&integer(t.fault,0,2047)&&integer(t.q,0,31);
+}
+function telemetry(t,packet){
+  if(packet.retain||!validTelemetry(t))throw new Error('遥测格式无效或固件版本不匹配');
+  data=t;lastReceived=Date.now();
+  const fields=[['temp',0,(t.temp/10).toFixed(1)],['hum',0,(t.hum/10).toFixed(1)],
+    ['distance',1,String(t.distance)],['human',4,t.human?'有人':'无人'],
+    ['smoke',2,t.smoke?'触发':'正常'],['air',3,t.air?'触发':'正常']];
+  for(const [id,bit,value] of fields){
+    const good=(t.q&(1<<bit))!==0;text(id,good?value:'不可用');$('card-'+id).dataset.bad=String(!good);
+  }
+  text('mode',t.mode?'布防':'撤防');text('state',stateNames[t.state]);text('alarm',alarmNames[t.alarm]);
+  text('quality',t.q===31?'传感器数据有效':'部分传感器不可用');
+  text('alarm-title',t.fault?'设备故障':t.alarm?alarmNames[t.alarm]:stateNames[t.state]);
+  text('alarm-detail',t.fault?'故障码 '+t.fault:'设备 '+$('dev').value);
+  text('fault-code',t.fault?'0x'+t.fault.toString(16).toUpperCase():'');
+  $('alarm-strip').dataset.tone=t.fault||t.alarm>1?'error':'';
+  text('clock',t.ts>=1577836800?new Date(t.ts*1000).toLocaleString('zh-CN',{hour12:false}):'设备时间待校准');
+  points.push({at:lastReceived,temp:t.q&1?t.temp/10:null,hum:t.q&1?t.hum/10:null,dist:t.q&2?t.distance:null});
+  while(points.length>200||points.length&&points[0].at<lastReceived-300000)points.shift();
+  renderHealth();drawGraphs();text('error','');
+}
+function message(topic,buffer,packet={}){
+  if(!topic.startsWith(root+'/')||buffer.length>1024)return;
+  const suffix=topic.slice(root.length+1);
+  try{
+    const body=buffer.toString();
+    if(suffix==='status'){
+      if(body!=='online'&&body!=='offline')throw new Error('设备状态无效');
+      deviceOnline=body==='online';text('device-state',deviceOnline?'设备在线':'设备离线');
+      if(!deviceOnline){pending=null;reply('设备离线',true);}renderHealth();return;
+    }
+    const obj=JSON.parse(body);
+    if(suffix==='telemetry')telemetry(obj,packet);
+    else if(suffix==='event'){
+      if(!integer(obj.type,1,65535)||!integer(obj.p,-32768,32767)||!integer(obj.a,-32768,32767))throw new Error('事件格式无效');
+      eventRow('事件',({5:'报警',6:'解除',7:'故障',8:'校时请求'}[obj.type]||'事件 '+obj.type)+' · '+obj.p+' / '+obj.a);
+    }else if(suffix==='config'){
+      if(!integer(obj.seq,0,4294967295)||!integer(obj.arm,0,1)||!integer(obj.temp,0,100)||
+         !integer(obj.distance,0,500)||!integer(obj.smoke,0,60000)||!integer(obj.air,0,60000))throw new Error('配置格式无效');
+      config=obj;eventRow('配置','序号 '+obj.seq+' · 温度 '+obj.temp+'°C · 距离 '+obj.distance+'cm');
+    }else if(suffix==='cmd/resp'){
+      if(!integer(obj.id,0,65535)||!['arm','fan','servo','buzzer','th','reboot','ack','time','unknown'].includes(obj.cmd)||
+         !['done','queued','rejected','accepted'].includes(obj.status)||packet.retain)throw new Error('回执格式无效');
+      const names={done:'已执行',queued:'等待保存',rejected:'已拒绝',accepted:'已接受'};
+      eventRow('回执','#'+obj.id+' '+obj.cmd+' · '+names[obj.status]);
+      if(pending&&pending.cmd===obj.cmd&&(pending.id===null||pending.id===obj.id)){
+        pending.id=obj.id;reply(obj.cmd+' · '+names[obj.status],obj.status==='rejected');
+        if(obj.status!=='queued')pending=null;renderHealth();
+      }
+    }
+  }catch(e){text('error',e.message);}
+}
+function connect(){
+  if(!window.mqtt){text('error','连接组件加载失败，请检查网络并重新打开页面');return;}
+  const dev=$('dev').value.trim();
+  if(!/^[A-Za-z0-9_-]{1,32}$/.test(dev)){text('error','设备名称仅允许 1–32 位字母、数字、下划线和短横线');return;}
+  const old=client;client=null;generation++;if(old)old.end(true);
+  resetData();root='smshub/'+dev;const token=generation;
+  text('topic',root);text('broker-state','正在连接');text('error','');
+  try{localStorage.setItem('smshub-dev',dev);}catch(_){}
+  const next=mqtt.connect('wss://broker.emqx.io:8084/mqtt',{
+    clientId:'dash_'+Math.random().toString(16).slice(2),protocolVersion:4,clean:true,
+    keepalive:30,connectTimeout:10000,reconnectPeriod:2000,queueQoSZero:false,resubscribe:true
+  });client=next;
+  next.on('connect',()=>{
+    if(token!==generation)return;
+    text('broker-state','看板已连接');text('error','');$('broker-dot').className='dot online';$('disconnect').disabled=false;
+    next.subscribe(['telemetry','event','status','config','cmd/resp'].map(s=>root+'/'+s),{qos:0},(err,granted)=>{
+      if(token!==generation)return;
+      if(err||!granted||granted.some(t=>t.qos===128)){text('error','订阅失败');deviceOnline=false;renderHealth();}
+    });
+  });
+  next.on('message',(topic,body,packet)=>{if(token===generation)message(topic,body,packet);});
+  next.on('close',()=>{
+    if(token!==generation)return;
+    deviceOnline=false;pending=null;text('broker-state','连接中断，正在重连');$('broker-dot').className='dot error';
+    text('device-state','设备状态未知');renderHealth();
+  });
+  next.on('error',e=>{if(token===generation)text('error','连接错误：'+e.message);});
+}
+function send(cmd,value){
+  renderHealth();
+  const manual=cmd!=='arm';
+  if(pending||!client||!client.connected||!deviceOnline||!data||Date.now()-lastReceived>=maxAge||
+     manual&&(data.state!==2||data.mode!==0||data.fault!==0||data.q!==31)){
+    reply('当前状态不允许发送',true);return;
+  }
+  const max={arm:1,fan:100,servo:180,buzzer:10000}[cmd];
+  if(!integer(value,cmd==='buzzer'?1:0,max)){reply('数值超出范围',true);return;}
+  pending={cmd,id:null,at:Date.now()};reply(cmd+' · 已发送，等待设备回执');renderHealth();
+  client.publish(root+'/cmd',cmd+'='+value,{qos:0,retain:false},err=>{
+    if(err){pending=null;reply('发送失败：'+err.message,true);renderHealth();}
+  });
+}
+function draw(canvas,series,min,max){
+  const rect=canvas.getBoundingClientRect(),dpr=Math.min(devicePixelRatio||1,2);
+  canvas.width=Math.round(rect.width*dpr);canvas.height=Math.round(rect.height*dpr);
+  const ctx=canvas.getContext('2d');if(!ctx||!rect.width)return;
+  ctx.scale(dpr,dpr);const w=rect.width,h=rect.height,left=36,right=w-16,top=14,bottom=h-30;
+  ctx.font='11px Consolas, monospace';ctx.lineWidth=1;
+  for(let i=0;i<=4;i++){
+    const y=top+(bottom-top)*i/4;ctx.strokeStyle='#dce4e1';ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(right,y);ctx.stroke();
+    ctx.fillStyle='#546962';ctx.fillText(String(Math.round(max-(max-min)*i/4)),0,y+4);
+  }
+  const end=Date.now(),start=end-300000;
+  ctx.fillText('-5 min',left,h-6);ctx.fillText('现在',right-26,h-6);
+  for(const [key,color] of series){
+    ctx.strokeStyle=color;ctx.lineWidth=2;ctx.beginPath();let last=0,connected=false;
+    for(const p of points){
+      if(p.at<start||p[key]===null){connected=false;continue;}
+      const x=left+(p.at-start)/300000*(right-left);
+      const y=bottom-(Math.max(min,Math.min(max,p[key]))-min)/(max-min)*(bottom-top);
+      if(!connected||p.at-last>5000)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+      last=p.at;connected=true;
+    }ctx.stroke();
+  }
+}
+function drawGraphs(){
+  draw($('climate'),[['temp','#ac4c23'],['hum','#11745c']],-20,100);
+  const good=points.filter(p=>p.dist!==null).map(p=>p.dist);
+  draw($('range'),[['dist','#236a9e']],0,Math.max(100,Math.ceil(Math.max(0,...good)/50)*50));
+}
+$('connect-form').addEventListener('submit',e=>{e.preventDefault();connect();});
+$('disconnect').addEventListener('click',()=>{
+  generation++;if(client)client.end(true);client=null;resetData();
+  text('broker-state','已断开');$('broker-dot').className='dot';$('disconnect').disabled=true;
+});
+for(const id of ['fan','servo'])$(id).addEventListener('input',()=>text(id+'-value',$(id).value+(id==='fan'?'%':'°')));
+$('arm-on').onclick=()=>send('arm',1);$('arm-off').onclick=()=>send('arm',0);
+$('fan-send').onclick=()=>send('fan',Number($('fan').value));$('fan-stop').onclick=()=>send('fan',0);
+$('servo-send').onclick=()=>send('servo',Number($('servo').value));$('servo-zero').onclick=()=>send('servo',0);
+$('buzzer-send').onclick=()=>send('buzzer',Number($('buzzer').value));
+$('clear-events').onclick=()=>{$('events').replaceChildren();$('empty').hidden=false;};
+window.addEventListener('resize',drawGraphs);
+setInterval(()=>{renderHealth();drawGraphs();},1000);
+try{
+  const selected=new URLSearchParams(location.search).get('dev')||localStorage.getItem('smshub-dev');
+  if(selected&&/^[A-Za-z0-9_-]{1,32}$/.test(selected))$('dev').value=selected;
+}catch(_){}
+resetData();
+const script=document.createElement('script');
+script.src='https://cdn.jsdelivr.net/npm/mqtt@5.16.0/dist/mqtt.min.js';
+script.onload=connect;
+script.onerror=()=>{text('broker-state','组件加载失败');text('error','MQTT 组件无法加载，请检查网络后重新打开页面');};
+document.head.append(script);
+</script>
+</html>

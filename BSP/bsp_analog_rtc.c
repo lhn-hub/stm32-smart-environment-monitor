@@ -93,6 +93,7 @@ int bsp_rtc_start(void)
     }
     if((RCC->BDCR&RCC_BDCR_RTCSEL)!=source) {
         __HAL_RCC_BACKUPRESET_FORCE(); __HAL_RCC_BACKUPRESET_RELEASE();
+        bsp_backup_restore(); /* Preserve reset counters across RTC source changes. */
         if(source==RCC_RTCCLKSOURCE_LSE) {
             __HAL_RCC_LSE_CONFIG(RCC_LSE_ON); start=HAL_GetTick();
             while(!__HAL_RCC_GET_FLAG(RCC_FLAG_LSERDY)) {

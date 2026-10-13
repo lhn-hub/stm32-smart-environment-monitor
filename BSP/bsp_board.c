@@ -9,6 +9,7 @@
 
 int bsp_console_init(void);
 int bsp_controls_init(void);
+void bsp_boot_record(void);
 static volatile uint32_t fault_latched;
 int bsp_is_faulted(void) { return fault_latched!=0; }
 void bsp_emergency_stop(void) { fault_latched=1; bsp_safe_state(); }
@@ -72,8 +73,8 @@ int bsp_services_init(void)
         gpio.Speed=GPIO_SPEED_FREQ_LOW; HAL_GPIO_Init(TB_BIN1_PORT,&gpio);
     }
     bsp_safe_state();
-    LOGI("sms-hub %s 看门狗复位=%u",APP_FW_VERSION,
-         __HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST)?1u:0u);
+    LOGI("sms-hub %s",APP_FW_VERSION);
+    bsp_boot_record();
     __HAL_RCC_CLEAR_RESET_FLAGS();
     LOGW("ADC校准禁用：候选地址未验证；温度不可用，VDDA为标称估算");
     return 0;

@@ -8,6 +8,7 @@
 #include "sensor.h"
 #include "datahub.h"
 #include "storage.h"
+#include "w25q64.h"
 #include "tb6612_fan.h"
 #include "m5_bench.h"
 #include "esp8266.h"
@@ -30,6 +31,9 @@ static uint32_t reboot_at;
 static network_command_t saving_command;
 static uint32_t saving_sequence;
 static uint8_t saving_reply;
+#if APP_M8_TEST_ENABLED
+volatile unsigned m8_overflow_request;
+#endif
 #if APP_WATCHDOG_TEST_ENABLED
 /* Dedicated bench build only: debugger sets ID 1..5 AFTER watchdog is active.
  * Production build has no injection variable or branch. Never tag this build.
@@ -106,6 +110,9 @@ static void worker(void *argument)
     unsigned id=(unsigned)(uintptr_t)argument;
     uint32_t last_status=0,boot=HAL_GetTick();
     int started=0,wd=0,ui_started=0;
+#if APP_CRITICAL_AUDIT
+    if(id==0)bsp_audit_start();
+#endif
     for(;;) {
         uint32_t now=HAL_GetTick();
 #if APP_WATCHDOG_TEST_ENABLED
@@ -133,6 +140,16 @@ static void worker(void *argument)
             taskENTER_CRITICAL(); ready|=1u<<id; taskEXIT_CRITICAL();
         }
         stamps[id]=HAL_GetTick();
+#if APP_M8_TEST_ENABLED
+        if(id==0 && m8_overflow_request==1u){
+            TaskStatus_t info;volatile StackType_t *base;unsigned j;
+            m8_overflow_request=0;
+            vTaskGetInfo(NULL,&info,pdFALSE,eInvalid);base=info.pxStackBase;
+            /* Corrupt only the real kernel guard; PendSV must detect it. */
+            for(j=0;j<4u;j++)base[j]=0;
+            taskYIELD();
+        }
+#endif
         xEventGroupSetBits(heartbeats,1u<<id);
         if(id==0) {
             const EventBits_t all=(1u<<APP_TASK_COUNT)-1u;
@@ -167,8 +184,6 @@ static void worker(void *argument)
             key_event_t e;
             if(!ui_started && (ready&(1u<<3))) { menu_init(); ui_started=1; }
             while(bsp_key_get(&e)) {
-                LOGI("按键=%u 动作=%s 时刻=%lu",(unsigned)e.source,
-                     e.action==KEY_LONG?"长按":"单击",(unsigned long)e.tick);
                 if(ui_started) menu_key(&e);
             }
         }
@@ -189,6 +204,21 @@ static void worker(void *argument)
             if(id==3)sensors_log_table();
             if(id==0) LOGI("堆剩余=%u字节 看门狗故障=%lu",(unsigned)xPortGetFreeHeapSize(),(unsigned long)watchdog_tripped);
         }
+        if(id==0){
+            static uint32_t report_at;
+            if(now-report_at>=APP_BURN_REPORT_MS){
+                network_status_t net;unsigned resets,boots;
+                report_at=now;network_get_status(&net);bsp_boot_stats(&resets,&boots);
+                LOGI("BURN ms=%lu wd=%u boots=%u reconnect=%lu heap=%u min=%u mqtt=%u drop=%lu",
+                     (unsigned long)now,resets,boots,(unsigned long)net.reconnects,
+                     (unsigned)xPortGetFreeHeapSize(),(unsigned)xPortGetMinimumEverFreeHeapSize(),
+                     (unsigned)net.mqtt,(unsigned long)net.dropped);
+            }
+#if APP_CRITICAL_AUDIT
+            bsp_audit_report();
+#endif
+        }
+        if(id==5)w25q_wear_report(now);
         vTaskDelay(pdMS_TO_TICKS(id==1?APP_ACTUATOR_POLL_MS:id==2?APP_NET_POLL_MS:id==4?APP_MENU_PERIOD_MS:id==3?APP_SENSOR_POLL_MS:APP_MONITOR_PERIOD_MS));
     }
 }
@@ -206,6 +236,11 @@ void app_start(void)
             bsp_panic("任务创建失败");
     vTaskStartScheduler(); bsp_panic("调度器启动失败");
 }
-void vApplicationMallocFailedHook(void) { bsp_panic("内存分配失败"); }
+void vApplicationMallocFailedHook(void) { bsp_fault_record(3u,0);bsp_panic("内存分配失败"); }
 void vApplicationStackOverflowHook(TaskHandle_t task,char *name)
-{ (void)task; (void)name; bsp_panic("任务栈溢出"); }
+{
+    (void)name;
+    bsp_fault_record(2u,0);bsp_emergency_stop();
+    bsp_fault_hex("STACK task=",(uint32_t)(uintptr_t)task);
+    bsp_panic("任务栈溢出");
+}
