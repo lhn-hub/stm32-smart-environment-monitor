@@ -4,6 +4,7 @@
 #include "storage.h"
 #include "datahub.h"
 #include "sensor.h"
+#include "alarm_engine.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "stm32f1xx_hal.h"
@@ -56,7 +57,7 @@ typedef enum {
     NET_ONLINE,
     NET_BACKOFF
 } net_state_t;
-enum { NET_TX_NONE, NET_TX_STATUS, NET_TX_EVENT, NET_TX_REPLY, NET_TX_TELEMETRY };
+enum { NET_TX_NONE, NET_TX_STATUS, NET_TX_EVENT, NET_TX_REPLY, NET_TX_TELEMETRY, NET_TX_CONFIG };
 enum { RAW_TX_NONE, RAW_TX_WAIT_PROMPT, RAW_TX_WAIT_SEND };
 enum { MQTT_RX_HEADER, MQTT_RX_REMAINING, MQTT_RX_BODY };
 
@@ -100,6 +101,9 @@ static uint16_t mqtt_rx_payload_pos;
 static uint8_t mqtt_rx_topic_match;
 static char mqtt_cmd_topic[NET_TOPIC_SIZE];
 static char mqtt_rx_payload[NET_PAYLOAD_SIZE];
+static uint32_t config_sent_seq,config_tx_seq;
+static int32_t config_tx_fields[CFG_FIELD_COUNT];
+static uint8_t time_request_pending;
 
 static void copy_text(char *dst, size_t capacity, const char *src)
 {
@@ -232,6 +236,8 @@ static const char *command_name(unsigned kind)
     case NETWORK_CMD_BUZZER: return "buzzer";
     case NETWORK_CMD_THRESHOLD: return "th";
     case NETWORK_CMD_REBOOT: return "reboot";
+    case NETWORK_CMD_ACK: return "ack";
+    case NETWORK_CMD_TIME: return "time";
     default: return "unknown";
     }
 }
@@ -262,6 +268,7 @@ static int parse_command(const char *payload)
     equal = strchr(payload, '=');
     if (!equal) equal = strchr(payload, ':');
     if (!equal || equal == payload) return -1;
+    if((size_t)(equal-payload)>=sizeof(key) || strlen(equal+1)>=sizeof(value))return -1;
     while (payload[i] && payload + i < equal && i + 1u < sizeof(key)) {
         key[i] = payload[i];
         ++i;
@@ -296,6 +303,14 @@ static int parse_command(const char *payload)
         if (parse_number(value, &number) || number != 1) return -1;
         return command_push(NETWORK_CMD_REBOOT, 0, number);
     }
+    if (!strcmp(key,"ack")) {
+        if(parse_number(value,&number) || number!=1)return -1;
+        return command_push(NETWORK_CMD_ACK,0,number);
+    }
+    if (!strcmp(key,"time")) {
+        if(parse_number(value,&number) || number<1577836800)return -1;
+        return command_push(NETWORK_CMD_TIME,0,number);
+    }
     if (!strcmp(key, "th")) {
         char *colon = strchr(value, ':');
         uint8_t field = CFG_TEMP;
@@ -309,7 +324,10 @@ static int parse_command(const char *payload)
             value[0] = 0;
             copy_text(value, sizeof(value), colon);
         }
-        if (parse_number(value, &number)) return -1;
+        if (parse_number(value, &number) || number<0 ||
+            (field==CFG_TEMP && number>APP_EDIT_MAX_TEMP) ||
+            (field==CFG_DISTANCE && number>APP_EDIT_MAX_DISTANCE) ||
+            ((field==CFG_SMOKE || field==CFG_AIR) && number>APP_EDIT_MAX_CONFIRM_MS)) return -1;
         return command_push(NETWORK_CMD_THRESHOLD, field, number);
     }
     return -1;
@@ -694,7 +712,7 @@ static int mqtt_build_publish(const char *topic, const char *payload, unsigned r
 }
 
 enum { MQTT_PKT_CONNECT=1, MQTT_PKT_SUBSCRIBE, MQTT_PKT_STATUS,
-       MQTT_PKT_EVENT, MQTT_PKT_REPLY, MQTT_PKT_TELEMETRY };
+       MQTT_PKT_EVENT, MQTT_PKT_REPLY, MQTT_PKT_TELEMETRY, MQTT_PKT_CONFIG };
 static uint8_t raw_packet_kind;
 
 static int mqtt_build_raw_packet(uint8_t kind)
@@ -705,6 +723,14 @@ static int mqtt_build_raw_packet(uint8_t kind)
     if (kind == MQTT_PKT_STATUS) {
         if (build_topic(topic, sizeof(topic), "status")) return -1;
         return mqtt_build_publish(topic, "online", 1u);
+    }
+    if(kind==MQTT_PKT_CONFIG){
+        if(build_topic(topic,sizeof(topic),"config"))return -1;
+        snprintf(payload,sizeof(payload),
+                 "{\"seq\":%lu,\"arm\":%ld,\"temp\":%ld,\"distance\":%ld,\"smoke\":%ld,\"air\":%ld}",
+                 (unsigned long)config_tx_seq,(long)config_tx_fields[CFG_MODE],(long)config_tx_fields[CFG_TEMP],
+                 (long)config_tx_fields[CFG_DISTANCE],(long)config_tx_fields[CFG_SMOKE],(long)config_tx_fields[CFG_AIR]);
+        return mqtt_build_publish(topic,payload,1u);
     }
     if (kind == MQTT_PKT_EVENT) {
         if (build_topic(topic, sizeof(topic), "event")) return -1;
@@ -781,6 +807,7 @@ static int mqtt_raw_poll(uint32_t now)
         mqtt_sub_wait = 1; mqtt_conn_deadline = now + NET_CMD_TIMEOUT;
     } else {
         if (online_tx_kind == NET_TX_STATUS) online_status_pending = 0;
+        if (online_tx_kind == NET_TX_CONFIG) config_sent_seq=config_tx_seq;
         if (online_tx_kind == NET_TX_EVENT) event_pending = 0;
         if (online_tx_kind == NET_TX_REPLY) {
             reply_pending = 0;
@@ -819,6 +846,9 @@ static void online_poll(uint32_t now)
         if (mqtt_raw_begin(MQTT_PKT_STATUS, now)) { enter_reset(); return; }
         online_tx_kind = NET_TX_STATUS; return;
     }
+    if(time_request_pending && !event_count && !event_pending){
+        network_event_enqueue(EVENT_TIME_REQUEST,0,0,rtc_get());time_request_pending=0;
+    }
     if (event_count || event_pending) {
         result = publish_event_start();
         if (result < 0) { enter_reset(); return; }
@@ -828,6 +858,14 @@ static void online_poll(uint32_t now)
         result = publish_reply_start();
         if (result < 0) { enter_reset(); return; }
         if (result > 0) { online_tx_kind = NET_TX_REPLY; return; }
+    }
+    {
+        storage_status_t store;
+        if(!storage_get_fields(config_tx_fields,&store) && store.ready && store.config_seq!=config_sent_seq){
+            config_tx_seq=store.config_seq;
+            if(mqtt_raw_begin(MQTT_PKT_CONFIG,now)){enter_reset();return;}
+            online_tx_kind=NET_TX_CONFIG;return;
+        }
     }
     if ((int32_t)(now - next_telemetry) >= 0) {
         if (mqtt_raw_begin(MQTT_PKT_TELEMETRY, now)) { enter_reset(); return; }
@@ -840,6 +878,8 @@ void network_init(void)
 {
     memset((void *)&status, 0, sizeof(status));
     status.rssi = -127;
+    config_sent_seq=0;
+    time_request_pending=0;
     state = NET_INIT;
     state_attempts = 0;
     state_waiting = 0;
@@ -903,6 +943,8 @@ void network_poll(uint32_t now)
             mqtt_sub_ack = 0;
             failed_rounds = 0; online_status_pending = 1;
             state = NET_ONLINE;
+            config_sent_seq=0;
+            time_request_pending=1;
             next_telemetry = now;
             LOGI("网络在线 IP=%s RSSI=%d",status.ip,status.rssi);
         } else if ((int32_t)(now - mqtt_conn_deadline) >= 0) {
@@ -922,7 +964,7 @@ void network_poll(uint32_t now)
         }
         state_attempts = 0;
         switch (state) {
-        case NET_AT: state = NET_GMR; break;
+        case NET_AT: alarm_selftest_report(FAULT_ESP,1);state = NET_GMR; break;
         case NET_GMR: state = NET_MODE; break;
         case NET_MODE: state = NET_JOIN; break;
         case NET_JOIN: state = NET_IP; break;

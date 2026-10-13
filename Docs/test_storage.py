@@ -34,6 +34,7 @@ int spi_bus_take(uint32_t ms){(void)ms;if(bus_busy)return -1;assert(!bus_held);b
 void spi_bus_give(void){assert(bus_held);bus_held=0;}
 unsigned __get_IPSR(void){return 0;}
 uint32_t rtc_get(void){return 12345;}
+void alarm_selftest_report(uint32_t mask,int passed){(void)mask;(void)passed;}
 int datahub_set_gas_limits(uint32_t a,uint32_t b){applied_smoke=a;applied_air=b;return 0;}
 void bsp_log(const char*l,const char*f,...){(void)l;(void)f;}
 int network_event_enqueue(uint32_t t,int32_t p,int32_t a,uint32_t time)

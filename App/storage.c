@@ -5,6 +5,7 @@
 #include "datahub.h"
 #include "m5_bench.h"
 #include "esp8266.h"
+#include "alarm_engine.h"
 #include "FreeRTOS.h"
 #include "queue.h"
 #include "semphr.h"
@@ -62,7 +63,8 @@ void storage_start(void)
 {
     take_view();state.ready=0;recent_count=0;xSemaphoreGive(view_lock);
     LOGI("存储初始化：开始SPI/JEDEC");
-    if(w25q_init()){LOGE("Flash JEDEC阶段失败：读到=0x%06lX 期望=0x%06lX",(unsigned long)w25q_id(),(unsigned long)W25Q_JEDEC_ID);offline();return;}
+    if(w25q_init()){alarm_selftest_report(FAULT_FLASH,0);LOGE("Flash JEDEC阶段失败：读到=0x%06lX 期望=0x%06lX",(unsigned long)w25q_id(),(unsigned long)W25Q_JEDEC_ID);offline();return;}
+    alarm_selftest_report(FAULT_FLASH,1);
     LOGI("Flash JEDEC=0x%06lX SPI=9MHz",(unsigned long)w25q_id());
     {
         int result=kv_load(&current_config);
@@ -193,7 +195,7 @@ void storage_poll(void)
         r.kind=EVENT_CONFIG;
     }
     if(append_recent(r.time,r.kind,r.first,r.second))offline();
-    else network_event_enqueue(r.kind,r.first,r.second,r.time);
+    else if(r.kind<EVENT_ALARM)network_event_enqueue(r.kind,r.first,r.second,r.time);
 done:
     spi_bus_give();
 }

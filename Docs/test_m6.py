@@ -33,6 +33,9 @@ write(
     #define APP_CFG_DEVICE 33u
     #define APP_NET_TX_SIZE 256u
     #define APP_BEEP_MAX_MS 10000u
+    #define APP_EDIT_MAX_TEMP 100
+    #define APP_EDIT_MAX_DISTANCE 500
+    #define APP_EDIT_MAX_CONFIRM_MS 60000
     #define APP_MQTT_KEEPALIVE 60u
     #define APP_MQTT_LWT "offline"
     #define APP_TELEMETRY_MS 5000u
@@ -102,9 +105,17 @@ write(
     #include <stdint.h>
     int storage_get_network_text(unsigned, char *, size_t);
     int storage_get_network_numbers(uint32_t *, uint32_t *);
+    #define CFG_FIELD_COUNT 5
+    #define EVENT_TIME_REQUEST 8u
+    typedef struct { uint32_t ready,errors,dropped,erases,config_seq,pending; } storage_status_t;
+    int storage_get_fields(int32_t [CFG_FIELD_COUNT],storage_status_t *);
     #endif
     """,
 )
+write("alarm_engine.h", """
+    #define FAULT_ESP 128u
+    void alarm_selftest_report(unsigned mask,int passed);
+""")
 write(
     "sensor.h",
     r"""
@@ -148,6 +159,7 @@ write(
     #include <string.h>
     #include "esp8266.h"
     #include "datahub.h"
+    #include "storage.h"
 
     static uint32_t now;
     static char tx[256];
@@ -199,6 +211,13 @@ write(
         *port = 1883u; *keepalive = 60u; return 0;
     }
     uint32_t rtc_get(void) { return 1234u; }
+    void alarm_selftest_report(unsigned mask,int passed){assert(mask==128u && passed);}
+    static uint32_t config_seq=1;
+    int storage_get_fields(int32_t v[CFG_FIELD_COUNT],storage_status_t *s){
+        static const int32_t values[]={50,100,3000,10000,1};
+        memcpy(v,values,sizeof(values));memset(s,0,sizeof(*s));
+        s->ready=1;s->config_seq=config_seq;return 0;
+    }
     int datahub_snapshot(datahub_snapshot_t *out) {
         unsigned i;
         if (!out) return -1;
@@ -355,6 +374,15 @@ write(
         mqtt_publish("smshub/dev01/cmd", "reboot=1");
         assert(network_command_pop(&command) == 0);
         assert(command.kind == NETWORK_CMD_REBOOT);
+        mqtt_publish("smshub/dev01/cmd","ack=1");
+        assert(!network_command_pop(&command) && command.kind==NETWORK_CMD_ACK);
+        mqtt_publish("smshub/dev01/cmd","time=1800000000");
+        assert(!network_command_pop(&command) && command.kind==NETWORK_CMD_TIME);
+        mqtt_publish("smshub/dev01/cmd","time=0");assert(network_command_pop(&command)==-1);
+        mqtt_publish("smshub/dev01/cmd","th=temp:101");assert(network_command_pop(&command)==-1);
+        mqtt_publish("smshub/dev01/cmd","th=air:60001");assert(network_command_pop(&command)==-1);
+        mqtt_publish("smshub/dev01/cmd","ack=00000000000000000000000000000000000000000000000001junk");
+        assert(network_command_pop(&command)==-1);
         mqtt_publish("smshub/dev01/cmd", "fan=101");
         assert(network_command_pop(&command) == -1);
         mqtt_publish("smshub/dev01/cmd", "servo=-1");
@@ -373,6 +401,10 @@ write(
 
         /* Finish any retained event publishes before checking telemetry. */
         drain_outbound();
+        ++config_seq;
+        raw_round(3u,NULL,0);
+        assert(has_bytes("/config") && has_bytes("\"seq\":2") && has_bytes("\"temp\":50"));
+        assert((unsigned char)tx[0]==0x31u); /* retained committed config */
         /* A fresh telemetry transaction is fixed-order and contains valid JSON. */
         now += 5000u;
         network_poll(now);

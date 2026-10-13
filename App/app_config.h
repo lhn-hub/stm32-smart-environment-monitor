@@ -9,7 +9,7 @@
 #ifndef APP_NETWORK_PROVISION
 #define APP_NETWORK_PROVISION 0
 #endif
-#define APP_FW_VERSION "0.7.0-dev"
+#define APP_FW_VERSION "0.8.0-dev"
 #ifndef APP_WIFI_SSID
 #define APP_WIFI_SSID ""
 #endif
@@ -160,4 +160,9 @@
 #define APP_M5_STRESS_ENABLED 0
 #endif
 #define APP_M5_STRESS_CYCLES 100u
+#define APP_SELF_TEST_MS 15000u
+#define APP_ALARM_HOT_CONFIRM_MS 1000u
+#ifndef APP_M7_TEST_ENABLED
+#define APP_M7_TEST_ENABLED 0
+#endif
 #endif

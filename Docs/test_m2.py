@@ -133,6 +133,18 @@ unsigned fan_percent(void){return fan_value;}
 int servo_write(unsigned p){assert(p<=180);servo_value=p;return 0;}
 unsigned servo_angle(void){return servo_value;}
 int effect_set(effect_t e){assert(e<EFFECT_COUNT);colors=0;return 0;}
+#include "alarm_engine.h"
+static alarm_status_t mock_alarm={0,0,0,ALARM_DISARMED,ALARM_NONE};
+void alarm_selftest_report(uint32_t mask,int passed){(void)mask;(void)passed;}
+void alarm_get_status(alarm_status_t *s){*s=mock_alarm;}
+void alarm_acknowledge(void){}
+int alarm_set_mode(unsigned a){return storage_set(CFG_MODE,(int32_t)a);}
+int alarm_manual_fan(unsigned p){return fan_set(p);}
+int alarm_manual_servo(unsigned p){return servo_write(p);}
+int alarm_manual_effect(effect_t e){return effect_set(e);}
+int alarm_manual_beep(uint16_t ms){return beep_ms(ms);}
+int alarm_manual_rgb(uint16_t r,uint16_t g,uint16_t b){return rgb_set(r,g,b);}
+unsigned app_time_source(void){return 1;}
 void i2c_scan(void){}
 void bsp_log(const char *level,const char *format,...){(void)level;(void)format;}
 #include "../../Drivers_Device/oled_ui/oled_ui.c"
@@ -201,6 +213,14 @@ int main(void){
   snprintf(path,sizeof(path),"tmp/m2/page-%u.pbm",i);f=fopen(path,"wb");assert(f);fprintf(f,"P1\n128 64\n");
   for(y=0;y<64;y++){for(x=0;x<128;x++)fprintf(f,"%u ",(pixels[y/8*128+x]>>(y&7))&1);fputc('\n',f);}fclose(f);
  }
+ mock_alarm.state=ALARM_FAULT;mock_alarm.faults=FAULT_SMOKE|FAULT_AIR;mock_alarm.transitions++;
+ expect_header("FAULT");menu_key(&back);assert(!notice_visible);
+ mock_alarm.state=ALARM_ACTIVE;mock_alarm.kind=ALARM_FIRE;mock_alarm.faults=0;mock_alarm.transitions++;
+ expect_header("FIRE");
+ mock_alarm.kind=ALARM_INTRUSION;mock_alarm.transitions++;expect_header("INTRUSION");
+ mock_alarm.kind=ALARM_AIR;mock_alarm.transitions++;expect_header("AIR NOTICE");
+ mock_alarm.state=ALARM_DISARMED;mock_alarm.kind=0;mock_alarm.transitions++;
+ puts("PASS M7 actual OLED popup: FAULT/FIRE/INTRUSION/AIR, dismiss and restored navigation");
  puts("PASS actual menu: every page reachable/back, depth3, edit/accelerate/clamp, manual beep/RGB, all pages rendered");return 0;
 }
 ''')

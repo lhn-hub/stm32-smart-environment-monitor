@@ -44,7 +44,7 @@ int mcu_temp_get(int32_t *temperature_x10);
 uint32_t vdda_mv_get(void);
 /** @brief Atomically copy ADC estimate and last DMA sample time (task context). */
 void bsp_adc_snapshot(uint32_t *millivolts,uint32_t *timestamp);
-/** @brief Read/write RTC counter as Unix seconds; SensorTask is sole set owner. */
+/** @brief Read/write UTC Unix seconds; SensorTask owns writes via app_time. */
 uint32_t rtc_get(void);
 int rtc_set(uint32_t seconds);
 /** @brief Owner-task-only recovery: SensorTask during startup, MenuTask after handoff; never concurrent. */

@@ -1,5 +1,15 @@
 # sms-hub M0 工程脚手架
 
+### Phase 18: M7应用集成与报警状态机
+**Status:** in_progress
+- 复用现有 DataHub、AlarmTask、controls、KV、MQTT事件缓存和菜单，不新增任务或堆对象。
+- 实现自检/故障/撤防/预热150秒/布防/报警状态机、双鉴与持续时间、优先级和10秒解除；故障不联动，PA0及云端解除。
+- 集成联动、弹窗、日志/event、配置热加载、模式掉电恢复和非阻塞时间同步；保留MQ硬件禁用与ESP原固件。
+- 完成实际C主机模型、50次循环钩子、既有回归和Keil资源检查，交付T-01~T-12操作与预期。
+- v0.7尚未完整实机验收；不把主机模型当作板测，不提前发布v0.8。
+- 软件状态机、联动、弹窗、配置/时间入口、自检和50次钩子已完成；十组实际C回归与正常/测试Keil构建通过。
+- 交付正常HEX/测试HEX、T-01~T-12文档与资源报告；MQ安全接口、单DO开路诊断和用户实机验收仍待完成。
+
 ### Phase 17: ESP8266备份与兼容AT升级
 **Status:** paused
 - 用户已撤回升级路线，明确保留现有 `AT1.7.4.0 / SDK3.0.5`，不读取、不擦写、不升级 ESP8266 Flash。
@@ -98,7 +108,7 @@ M4软件、主机故障注入和编译完成；2026-10-11日志已确认真实W2
 按用户 M0、附件 A/B 完成 CubeMX/Keil 工程，真实编译与 DAP 验证后提交并标记 v0.1。
 
 ## Current Phase
-Phase13软件交付完成；现有 ESP8266 固件的 TCP-MQTT 核心链路已实机上线并收到 retained online、5秒 telemetry，仍待 cmd/resp、断网/LWT 和4小时堆稳定性验收。ESP8266保持原固件，不执行升级。M3/M4遗留物理验收与MQ禁用约束保留。
+Phase18：M7应用集成与报警状态机。基线为M6核心链路提交0df5c6f，Flash56172B/RAM19672B；ESP保持原固件，MQ禁用及M6剩余实机验收约束保留。
 
 ### Phase 1: 工具链与硬件约束核查
 **Status:** complete
@@ -116,7 +126,7 @@ Phase13软件交付完成；现有 ESP8266 固件的 TCP-MQTT 核心链路已实
 - 完成后提交 [M0] 工程:建立脚手架，打 tag v0.1。
 
 ## Next Step
-按 `Docs/M6-acceptance.md` 补做 cmd/resp、命令范围、断网/LWT 和4小时堆稳定性实机验收；现有 ESP8266 保持原固件。
+按Docs/M7-acceptance.md先做T-01故障路径，核对MQ电平/PB0共享接线；健康路径和发布标签等待实机前提及验收结果。
 
 ### Phase 6: M3传感器与DataHub
 **Status:** in_progress
@@ -138,6 +148,12 @@ Phase13软件交付完成；现有 ESP8266 固件的 TCP-MQTT 核心链路已实
 - 保留TIM4及校准默认禁用裁决；M1温度范围DoD仍存在冲突，待明确验收标准。
 
 ## Errors Encountered
+- 末次空白检查临时禁用core.autocrlf导致CRLF文件被逐行误报；恢复仓库正常换行策略并允许cr-at-eol检查，不重写源码或原始Keil证据。
+- 恢复上下文后误用App/sensors和BSP/controls路径，读取失败；用rg文件清单定位Drivers_Device/sensor.*与实际controls文件，未新建替代模块。Windows rg不展开App/storage*路径，改用明确文件名。
+- 扩展M7测试时一次补丁引用了不存在的断言上下文，整批未应用；读实际局部行后使用准确锚点完成扩展。
+- M6回归夹具新增storage_get_fields时缺storage.h类型声明；首次补丁上下文猜错，未修改文件，读准确include段后修正，不关闭-Werror。
+- M7初版主机桩缺TIM类型且数组参数形式触发-Werror，补齐夹具后T-01~T-12及50轮钩子通过；初次Keil发现新增CONFIG报文枚举遗漏，已补枚举，不屏蔽警告。
+- M7首次读取M5压测文件猜错Drivers_Device目录；后续改用rg文件清单定位，不按猜测新增替代文件。
 - 提交后路径检查最初将 Git 为含空格文件名添加的引号误判为无关扩展名；改用 `git status --porcelain -z` 的 NUL 分隔路径后通过，剩余15个未跟踪文件均为原始模块资料/重复 CubeMX 文件。
 - 首次检查全部暂存新文件时发现文档末尾空行，以及 Keil 原始日志/map 的尾随空格。已清理三份文档；原始工具输出保持不变，源码/文档单独执行空白检查。
 - 本次归档截图首次复制时临时路径手误，日志复制已成功；改用附件准确路径补齐截图，两文件哈希均与原附件一致。

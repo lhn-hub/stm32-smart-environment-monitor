@@ -1,6 +1,11 @@
-param([ValidateSet('M0','M1','M2','M3','M4','M5','M5-stress','M6')][string]$Stage='M5')
+param([ValidateSet('M0','M1','M2','M3','M4','M5','M5-stress','M6','M7','M7-test')][string]$Stage='M7')
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
+if ($Stage -in @('M7','M7-test')) {
+    $config = Get-Content -LiteralPath "$projectRoot/App/app_config.h" -Raw
+    $enabled = $config -match '(?m)^#define APP_M7_TEST_ENABLED 1\s*$'
+    if ($enabled -ne ($Stage -eq 'M7-test')) { throw 'APP_M7_TEST_ENABLED must be 0 for M7, 1 for M7-test.' }
+}
 if ($Stage -in @('M5','M5-stress')) {
     $config = Get-Content -LiteralPath "$projectRoot/App/app_config.h" -Raw
     $enabled = $config -match '(?m)^#define APP_M5_STRESS_ENABLED 1\s*$'

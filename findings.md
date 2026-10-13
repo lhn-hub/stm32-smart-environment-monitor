@@ -1,5 +1,23 @@
 # M0 前置核查记录
 
+## 2026-10-13 M7起点
+- Git基线0df5c6f已跟踪文件干净；DataHub已包含传感器值/quality/timestamp，菜单和MQTT已读快照。
+- M6资源为Flash56172B/RAM19672B，静态RAM仅余808B；新增状态机必须复用现有任务、定时器及事件队列。
+- 当前APP_MQ_DO_ENABLED=0，MQ_WARMUP_S=300；MQ安全接线尚未解除，不能为M7盲目启用。M7按150秒预热实现，MQ禁用时显示故障且禁止报警联动。
+- MQ驱动已做确认/解除滤波；M7引擎读取快照auxiliary原始DO自行计时，避免3秒+3秒及10秒+10秒的重复延迟。
+- 现有风扇持有SPI仲裁器会延后Flash日志；报警event须立即进入既有网络RAM环，持久日志排队待风扇停止，不因日志失败阻止报警。
+- PA0原来用于导航；只在报警状态拦截为手动解除，其它状态保留导航。手动解除后仍布防，持续条件重新确认；arm=0通过KV撤防。
+- 自检由OLED/MenuTask、JEDEC/LogTask和AT/NetTask上报，SensorTask仍是传感器驱动唯一读者。MCU温度校准禁用不作为外部传感器通信失败。
+- 选择网关MQTT时间请求/回复，避免依赖旧ESP固件未验证的SNTP命令；RTC写入仍归SensorTask，失败保留编译/备份时间且不阻塞网络。
+- M7首轮正常构建0错误0警告，Flash59888B/RAM19800B，相对M6+3716B/+128B；仅余1552B Flash/680B RAM，继续禁用生产测试钩子，不新增RTOS对象。
+- 保留SPI/FAN互斥：配置写入在风扇运行时等待。arm=0接受后优先停止输出以释放总线，KV确认后给最终done；保存失败转故障，旧已确认字段不替换。
+- 正常AlarmTask静态调用链为worker(96B)+alarm_poll最大深度496B，低于256字栈；编译报告不能替代板上高水位，实测须继续记录。
+- 两路DO及Rd-03均标记SENSOR_NO_OPEN_WIRE_TEST，单数字电平无法保证拔线可观测；DHT/超声通信超时可进入FAULT，MQ/radar拔线DoD需硬件诊断支持，不能伪造通过。
+- 严格自检/故障恢复路径经DISARMED再到WARMUP；中间态保留armed位，禁止手动输出抢占。高温确认取min(已配置烟雾时间,1000ms)，避免配置小于1秒时反而延长。
+- 复测实际C状态机/NetTask通过；首个测试构建Flash60440B/RAM19864B。最终资源以边界修正后的构建为准，正常宏已恢复为0。
+- 最终正常Flash59952B/RAM19800B，M6增量+3780B/+128B；测试Flash60456B/RAM19864B。正常余1488B Flash/680B RAM，仍在红线内。两构建0错误0警告，正常HEX哈希与Objects一致。
+- M7验收文档已列T-01~T-12、实际设备topics、queued/done、故障位、网关time入口及50次虚拟时间钩子；未部署常驻网关，MQTTX可回time=UTC秒。软件验证不能关闭单DO开路诊断或M6/M7板测缺口。
+
 ## 2026-10-13 TCP-MQTT实机证据核对
 - 用户串口日志在 14.296 秒报告网络在线；MQTTX 在 18:20:32.662 收到设备专用 status retained online，18:20:37.350 和 18:20:42.228 收到 telemetry，间隔 4.878 秒。
 - 两条 telemetry 按截图转录后均为合法 JSON，字段顺序符合清单，wifi/mqtt 均为1；并非截图上方 11:10 的电脑回环消息。

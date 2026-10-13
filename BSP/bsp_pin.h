@@ -133,7 +133,7 @@ extern "C" {
 #define MQ_ALARM_LEVEL             GPIO_PIN_RESET
 #define MQ_SCAN_PERIOD_MS          200u
 /* Module manual recommends at least five minutes; not a substitute for aging. */
-#define MQ_WARMUP_S                300u
+#define MQ_WARMUP_S                150u
 
 /* DHT11: input/open-drain direction switching, no long busy wait. */
 #define DHT11_PORT                 GPIOB

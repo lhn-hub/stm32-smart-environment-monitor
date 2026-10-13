@@ -12,6 +12,8 @@
 #include "m5_bench.h"
 #include "esp8266.h"
 #include "sg90.h"
+#include "alarm_engine.h"
+#include "app_time.h"
 #include "bsp_services.h"
 #include "stm32f1xx_hal.h"
 int bsp_adc_start(void);
@@ -25,6 +27,9 @@ static volatile uint32_t watchdog_tripped;
 static TaskHandle_t handles[APP_TASK_COUNT];
 static uint8_t reboot_pending;
 static uint32_t reboot_at;
+static network_command_t saving_command;
+static uint32_t saving_sequence;
+static uint8_t saving_reply;
 #if APP_WATCHDOG_TEST_ENABLED
 /* Dedicated bench build only: debugger sets ID 1..5 AFTER watchdog is active.
  * Production build has no injection variable or branch. Never tag this build.
@@ -38,26 +43,50 @@ static const uint8_t priorities[APP_TASK_COUNT]={APP_MONITOR_PRIORITY,APP_ALARM_
 static void network_commands_poll(uint32_t now)
 {
     network_command_t command;
+    if(saving_reply){
+        int32_t fields[CFG_FIELD_COUNT];storage_status_t store;
+        if(!storage_get_fields(fields,&store) && (!store.ready || !store.pending)){
+            network_command_reply(&saving_command,store.ready && store.config_seq!=saving_sequence &&
+                                  fields[saving_command.field]==saving_command.value?
+                                  NETWORK_REPLY_DONE:NETWORK_REPLY_REJECTED);
+            saving_reply=0;
+        }
+    }
     if (network_command_pop(&command) == 0) {
         int result = -1;
         unsigned reply = NETWORK_REPLY_REJECTED;
         switch (command.kind) {
         case NETWORK_CMD_ARM:
         case NETWORK_CMD_THRESHOLD:
-            result = storage_set(command.field, command.value);
+            {
+                int32_t fields[CFG_FIELD_COUNT];storage_status_t store;
+                if(!saving_reply && !storage_get_fields(fields,&store)){
+                    saving_sequence=store.config_seq;
+                    result=command.kind==NETWORK_CMD_ARM?alarm_set_mode((unsigned)command.value):
+                           storage_set(command.field,command.value);
+                    if(!result){saving_command=command;saving_reply=1;}
+                }
+            }
             reply = result ? NETWORK_REPLY_REJECTED : NETWORK_REPLY_QUEUED;
             break;
         case NETWORK_CMD_FAN:
-            result = fan_set((unsigned)command.value);
+            result = alarm_manual_fan((unsigned)command.value);
             reply = result ? NETWORK_REPLY_REJECTED : NETWORK_REPLY_DONE;
             break;
         case NETWORK_CMD_SERVO:
-            result = servo_write((unsigned)command.value);
+            result = alarm_manual_servo((unsigned)command.value);
             reply = result ? NETWORK_REPLY_REJECTED : NETWORK_REPLY_DONE;
             break;
         case NETWORK_CMD_BUZZER:
-            result = beep_ms((uint16_t)command.value);
+            result = alarm_manual_beep((uint16_t)command.value);
             reply = result ? NETWORK_REPLY_REJECTED : NETWORK_REPLY_DONE;
+            break;
+        case NETWORK_CMD_ACK:
+            alarm_acknowledge();result=0;reply=NETWORK_REPLY_DONE;
+            break;
+        case NETWORK_CMD_TIME:
+            result=app_time_request((uint32_t)command.value);
+            reply=result?NETWORK_REPLY_REJECTED:NETWORK_REPLY_QUEUED;
             break;
         case NETWORK_CMD_REBOOT:
             reply = NETWORK_REPLY_ACCEPTED;
@@ -92,6 +121,7 @@ static void worker(void *argument)
             if(id==3) {
                 if(bsp_adc_start()) bsp_panic("ADC初始化失败");
                 if(bsp_rtc_start()) LOGE("RTC初始化失败");
+                else app_time_start();
                 i2c_scan();
                 sensors_init();
             }
@@ -144,12 +174,13 @@ static void worker(void *argument)
         }
         if(id==5)storage_poll();
         if(id==1 && (ready&((1u<<4)|(1u<<5)))==((1u<<4)|(1u<<5))){
+            alarm_poll(now);
             fan_poll(now);
 #if APP_M5_STRESS_ENABLED
             m5_bench_poll();
 #endif
         }
-        if(id==3)sensors_poll();
+        if(id==3){app_time_poll();sensors_poll();}
         if(id==4 && ui_started) menu_poll();
         if(now-last_status>=APP_STATUS_MS) {
             unsigned free=(unsigned)uxTaskGetStackHighWaterMark(NULL);
@@ -166,6 +197,7 @@ void app_start(void)
     unsigned i;
     if(bsp_services_init()) bsp_panic("板级服务初始化失败");
     if(datahub_init())bsp_panic("DataHub初始化失败");
+    alarm_init();
     if(storage_setup())bsp_panic("存储队列初始化失败");
     heartbeats=xEventGroupCreate();
     if(!heartbeats) bsp_panic("心跳内存分配失败");

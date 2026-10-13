@@ -7,6 +7,8 @@
 #include "sg90.h"
 #include "tb6612_fan.h"
 #include "esp8266.h"
+#include "alarm_engine.h"
+#include "app_time.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include <stdio.h>
@@ -23,6 +25,9 @@ static storage_status_t store_state;
 static int32_t committed_fields[CFG_FIELD_COUNT];
 static unsigned history_count;
 static datahub_snapshot_t sensors;
+static alarm_status_t alarm_status;
+static uint32_t notice_transition,notice_fault;
+static uint8_t notice_visible;
 static void no_op(void) {}
 static page_id current(void) { return stack[depth]; }
 static const page_t pages[PAGE_COUNT];
@@ -39,15 +44,15 @@ static void header(const char *name)
 { oled_text(0,0,name,0);oled_line(0,9,127,9,1); }
 static void status(void)
 {
-    /* Outlined W/M = offline placeholders. A/L/P icons show arm/alarm/warmup. */
     network_status_t net;
     network_get_status(&net);
-    ui_status(net.wifi,net.mqtt,armed,0,HAL_GetTick()<APP_MQ_WARMUP_MS);
+    ui_status(net.wifi,net.mqtt,armed,alarm_status.state==ALARM_ACTIVE,alarm_status.state==ALARM_WARMUP);
 }
 static void render_home(void)
 {
     uint32_t seconds=rtc_get();
-    header(armed?"ARMED":"DISARM"); status();
+    static const char *const labels[]={"SELF TEST","FAULT","DISARM","WARMUP","ARMED","ALARM"};
+    header(labels[alarm_status.state]); status();
     if(!datahub_snapshot(&sensors)) {
         const sensor_value_t *t=&sensors.sensors[SENSOR_DHT11];
         const sensor_value_t *u=&sensors.sensors[SENSOR_DISTANCE];
@@ -64,7 +69,12 @@ static void render_home(void)
         if(t->quality==SENSOR_STALE)oled_text(0,48,"T/H: STALE",0);
     } else oled_text(0,16,"Sensors: unavailable",0);
     snprintf(text,sizeof(text),"UTC %02lu:%02lu:%02lu",(unsigned long)(seconds/3600u%24u),(unsigned long)(seconds/60u%60u),(unsigned long)(seconds%60u));
-    oled_text(0,40,text,0);oled_text(0,56,"KEY1:NEXT PB15:OK",0);
+    oled_text(0,40,text,0);
+    if(alarm_status.state==ALARM_WARMUP){
+        snprintf(text,sizeof(text),"Warmup:%lus",(unsigned long)((alarm_status.warmup_remaining_ms+999u)/1000u));
+        oled_text(0,48,text,0);
+    }
+    oled_text(0,56,"KEY1:NEXT PB15:OK",0);
 }
 static const char *const root_labels[]={"Home","Arm","Thresholds","Manual Test","Network","Event Log","System","About"};
 static void render_list(const char *title,const char *const *labels,unsigned count)
@@ -91,7 +101,7 @@ static int manual_fan,manual_servo;
 static unsigned font_test;
 #define MANUAL_COUNT (sizeof(manual_labels)/sizeof(manual_labels[0]))
 static void manual_exit(void)
-{fan_set(0);servo_write(0);effect_set(EFFECT_STANDBY);manual_fan=manual_servo=0;font_test=0;}
+{alarm_manual_fan(0);alarm_manual_servo(0);alarm_manual_effect(EFFECT_STANDBY);manual_fan=manual_servo=0;font_test=0;}
 static void render_manual(void)
 {
     if(font_test){unsigned i;header("FONTS");oled_text(0,12,"ASCII 6x8",0);oled_text(0,22,"8x16",1);
@@ -145,11 +155,14 @@ static void render_system(void)
 {
     const oled_stats_t *s=oled_stats();header("SYSTEM");
     oled_text(0,14,"MCU T:FAULT cal:OFF",0);
-    snprintf(text,sizeof(text),"VDDA:%lumV nominal",(unsigned long)vdda_mv_get());oled_text(0,22,text,0);
+    if(!datahub_snapshot(&sensors))
+        snprintf(text,sizeof(text),"VDDA:%ldmV nominal",(long)sensors.sensors[SENSOR_MCU].auxiliary);
+    else snprintf(text,sizeof(text),"VDDA:FAULT");
+    oled_text(0,22,text,0);
     snprintf(text,sizeof(text),"Stack:%lu/%u words",(unsigned long)uxTaskGetStackHighWaterMark(NULL),APP_MENU_STACK);oled_text(0,30,text,0);
     snprintf(text,sizeof(text),"I2C fail:%lu rec:%lu",(unsigned long)s->failures,(unsigned long)s->recoveries);oled_text(0,38,text,0);
     snprintf(text,sizeof(text),"Erase boot:%lu E:%lu",(unsigned long)store_state.erases,(unsigned long)store_state.errors);oled_text(0,46,text,0);
-    oled_text(0,56,APP_FW_VERSION,0);
+    snprintf(text,sizeof(text),"RTC source:%u",app_time_source());oled_text(0,56,text,0);
 }
 static void render_about(void){header("ABOUT");oled_text(0,18,"sms-hub",1);oled_text(0,40,APP_FW_VERSION,0);oled_text(0,52,"STM32F103 FreeRTOS",0);}
 static void select_key(int key)
@@ -158,18 +171,19 @@ static void select_key(int key)
     if(key<0){if(id==MANUAL && font_test){font_test=0;return;}pop();return;}
     if(id==HOME)push(ROOT);
     else if(id==ROOT){static const page_id target[]={HOME,ARM,THRESHOLDS,MANUAL,NETWORK,EVENTLOG,SYSTEM,ABOUT};if(s==0){depth=0;}else push(target[s]);}
-    else if(id==ARM){if(storage_set(CFG_MODE,!armed))LOGW("布防保存未提交：存储忙或离线");}
+    else if(id==ARM){if(alarm_set_mode(!armed))LOGW("布防保存未提交：存储忙或离线");}
     else if(id==THRESHOLDS){
         if(key==2 && editing)accelerate_until=HAL_GetTick()+APP_EDIT_ACCEL_MS;
         else if(editing){if(!storage_set(s,values[s]))editing=0;else LOGW("配置未保存：存储忙或离线");}
         else if(store_state.ready && !store_state.pending)editing=1;
     }
     else if(id==MANUAL){
+        if(alarm_status.state!=ALARM_DISARMED || alarm_status.faults){editing=0;return;}
         if(s<2u){editing=!editing;return;}
         if(s>=3u && s<=12u && storage_event(EVENT_MANUAL,(int32_t)s,0))LOGW("手动测试事件未入队");
-        if(s>=3u && s<=8u)effect_set(s==8u?EFFECT_STANDBY:(effect_t)(s-2u));
-        else switch(s){case 9:effect_set(EFFECT_STANDBY);beep_ms(APP_MENU_BEEP_MS);break;
-        case 10:case 11:case 12:effect_set(EFFECT_STANDBY);rgb_set(s==10?RGB_ARR:0,s==11?RGB_ARR:0,s==12?RGB_ARR:0);break;
+        if(s>=3u && s<=8u)alarm_manual_effect(s==8u?EFFECT_STANDBY:(effect_t)(s-2u));
+        else switch(s){case 9:alarm_manual_effect(EFFECT_STANDBY);alarm_manual_beep(APP_MENU_BEEP_MS);break;
+        case 10:case 11:case 12:alarm_manual_effect(EFFECT_STANDBY);alarm_manual_rgb(s==10?RGB_ARR:0,s==11?RGB_ARR:0,s==12?RGB_ARR:0);break;
         case 13:i2c_scan();break;case 14:font_test=!font_test;break;default:break;}
     }
 }
@@ -178,7 +192,7 @@ static const page_t pages[PAGE_COUNT]={
  {no_op,no_op,render_arm,select_key},{no_op,no_op,render_thresholds,select_key},
  {no_op,manual_exit,render_manual,select_key},{no_op,no_op,render_network,select_key},
  {no_op,no_op,render_log,select_key},{no_op,no_op,render_system,select_key},{no_op,no_op,render_about,select_key}};
-void menu_init(void){depth=0;stack[0]=HOME;(void)oled_init();deadline=HAL_GetTick();last_report=deadline;frames=0;}
+void menu_init(void){depth=0;stack[0]=HOME;alarm_selftest_report(FAULT_OLED,oled_init()==0);deadline=HAL_GetTick();last_report=deadline;frames=0;}
 static void navigate(int steps)
 {
     uint32_t now=HAL_GetTick();page_id id=current();
@@ -191,7 +205,7 @@ static void navigate(int steps)
             int *value=selected[id]==0?&manual_fan:&manual_servo;
             int max=selected[id]==0?100:180;
             *value+=steps;if(*value<0)*value=0;if(*value>max)*value=max;
-            if(selected[id]==0)fan_set((unsigned)*value);else servo_write((unsigned)*value);
+            if(selected[id]==0)alarm_manual_fan((unsigned)*value);else alarm_manual_servo((unsigned)*value);
         }
         else {int count=id==ROOT?8:id==THRESHOLDS?4:id==MANUAL?(int)MANUAL_COUNT:id==EVENTLOG?(history_count?(int)history_count:1):1;int n=(int)selected[id]+steps;
             if(n<0)n=count-1;
@@ -201,6 +215,9 @@ static void navigate(int steps)
 }
 void menu_key(const key_event_t *e)
 {
+    alarm_get_status(&alarm_status);
+    if(e->source==KEY_WAKEUP && alarm_status.state==ALARM_ACTIVE){alarm_acknowledge();notice_visible=0;return;}
+    if(e->source==KEY_BACK && notice_visible){notice_visible=0;return;}
     if(e->source==KEY_WAKEUP){navigate(e->action==KEY_LONG?-1:1);return;}
     if(e->source==KEY_BACK){pages[current()].on_key(-1);return;}
     if(e->source==KEY_CONFIRM)pages[current()].on_key(e->action==KEY_LONG?2:1);
@@ -212,7 +229,25 @@ void menu_poll(void)
         armed=committed_fields[CFG_MODE]!=0;
         if(!editing && !store_state.pending)for(i=0;i<4;i++)values[i]=(int)committed_fields[i];
     }
-    if((int32_t)(now-deadline)>=0){deadline=now+APP_OLED_FRAME_MS;oled_clear();pages[id].render();if(!oled_flush(0))++frames;}
+    alarm_get_status(&alarm_status);
+    if(notice_transition!=alarm_status.transitions || notice_fault!=alarm_status.faults){
+        notice_transition=alarm_status.transitions;notice_fault=alarm_status.faults;
+        notice_visible=alarm_status.state==ALARM_ACTIVE || alarm_status.state==ALARM_FAULT;
+        editing=0;font_test=0;
+    }
+    if((int32_t)(now-deadline)>=0){
+        deadline=now+APP_OLED_FRAME_MS;oled_clear();
+        if(notice_visible && alarm_status.state==ALARM_FAULT){
+            header("FAULT");
+            snprintf(text,sizeof(text),"Code:0x%03lX",(unsigned long)alarm_status.faults);oled_text(0,16,text,1);
+            oled_text(0,40,"Outputs stopped",0);oled_text(0,56,"PC13:BACK",0);
+        }else if(notice_visible && alarm_status.state==ALARM_ACTIVE){
+            header(alarm_status.kind==ALARM_FIRE?"FIRE":alarm_status.kind==ALARM_INTRUSION?"INTRUSION":"AIR NOTICE");
+            oled_hanzi(0,16,0);oled_hanzi(16,16,1);oled_text(0,48,"PA0:ACK PC13:BACK",0);
+        }else pages[id].render();
+        if(!oled_flush(0))++frames;
+        alarm_selftest_report(FAULT_OLED,oled_stats()->online);
+    }
     if(now-last_report>=APP_STATUS_MS){
         const oled_stats_t *s=oled_stats();
         LOGI("显示：帧率x10=%lu 耗时=%luus 连败=%lu 恢复=%lu",

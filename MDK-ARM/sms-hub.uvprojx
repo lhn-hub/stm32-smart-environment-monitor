@@ -618,6 +618,16 @@
               <FilePath>../App/tasks/app_tasks.c</FilePath>
             </File>
             <File>
+              <FileName>alarm_engine.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../App/alarm_engine.c</FilePath>
+            </File>
+            <File>
+              <FileName>app_time.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../App/app_time.c</FilePath>
+            </File>
+            <File>
               <FileName>event_groups.c</FileName>
               <FileType>1</FileType>
               <FilePath>../Middleware/FreeRTOS/event_groups.c</FilePath>

@@ -293,3 +293,14 @@
 - 最终检查：51个拟提交文件均未匹配本地密码，`App/app_secrets.h`、交付 HEX 和 AXF 确认受 Git 忽略规则保护；`git diff --check` 通过。
 - 暂存新文件后补做源码/文档空白检查：清理三份文档的末尾空行；Keil 原始构建/下载日志与 map 保留工具输出中的尾随空格，不改写现场证据。
 - 已完成本地 M6 核心链路提交，核验51个相关文件入库、暂存区和已跟踪工作文件干净；15个原始模块资料/重复 CubeMX 文件保持未跟踪。没有推送或发布 `v0.7`。
+
+# 2026-10-13 M7应用集成
+- 已执行Ponytail full及STM32/FreeRTOS、embedded-systems、planning-with-files预检，恢复根目录计划。
+- 用户授权M7状态机与集成开发；保留现有任务/硬件安全约束和ESP原固件，完整M6实测/v0.7仍未结束。
+- 当前检查DataHub、AlarmTask、controls、存储和MQTT接口，准备实际C状态机测试及T-01~T-12验收材料。
+- 已实现纯状态机及AlarmTask联动、故障码/弹窗、PA0及ack、模式/阈值热加载和SensorTask时间入口；首组实际C测试覆盖严格时长、优先级、无效快照、回绕和50轮混合循环，全部通过。
+- MQTT新增retained config快照、ack/time命令、KV完成后的done回执及网关时间请求；正在做完整构建和既有测试夹具更新。
+- 严格状态路径修正后实际C回归通过；M7-test首轮Keil0错误0警告，Flash60440B/RAM19864B。已恢复APP_M7_TEST_ENABLED=0，补充高温min边界和故障恢复中间态手动门禁测试，准备最终构建。
+- 最终M7正常/测试全量构建均0错误0警告，分别Flash59952/60456B、RAM19800/19864B；归档Docs/M7-app.hex与M7-test.hex，最终工程宏0，正常交付与Objects哈希相同。
+- 实际C的M7/M6/M2/存储三变体/M3/M5/UART/DHT/SPI/超声映射十组复测均通过；M7主机50轮混合循环失败0，未当作50次实物动作成功。
+- 已完成Docs/M7-acceptance.md逐条板测脚本、M7-changes.md资源和限制报告；MQ默认禁用、单DO无法可靠开路检测、M6完整验收及M7板测仍保留，未下载/升级硬件或发布v0.8。

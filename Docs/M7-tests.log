@@ -1,0 +1,47 @@
+PASS T-01 self-test timeout/fault/recovery and 150s warmup
+PASS T-02/T-03 radar-only, distance-only, strict <100cm dual 2s
+PASS T-04/T-05 smoke 3s and temperature >= threshold shortening to 1s
+PASS T-06/T-07 air10s, priority escalation, delayed downgrade/release10s
+PASS T-08 invalid/stale/disabled/missing snapshots fault without alarm
+PASS T-09 manual acknowledge, persistent condition reconfirm, disarm
+PASS T-10 runtime linkage, manual arbitration, pending disarm, faults and tick wrap
+PASS T-11 build UTC+8/leap day, backup time, bounded gateway queue, RTC failure
+PASS T-12 actual firmware hook: 50 mixed alarm/recovery cycles, zero failures
+PASS actual NetTask dispatch: queued -> committed done, failure retains old config, mode, gated outputs, ack/time/reboot
+PASS M6 host model: API init, ISR guard, 20-event cache, TCP/MQTT online, binary downlink bounds, fixed telemetry field order, TCP setup rejection/reset
+PASS EC11 actual decoder: +20/-20, no reverse, bounced edges, invalid two-bit transitions
+PASS OLED console contention: deferred frame retains online/dirty state; lock released on success and failure
+PASS OLED actual driver: 1KB buffer, dirty page/no-op refresh, clipping, unplug/retry/recover/reset consecutive failures
+PASS Manual Test visible navigation: all 15 items forward/back/wrap, font preview long/click/back, edit decrement/clamp, exit safe
+PASS M7 actual OLED popup: FAULT/FIRE/INTRUSION/AIR, dismiss and restored navigation
+PASS actual menu: every page reachable/back, depth3, edit/accelerate/clamp, manual beep/RGB, all pages rendered
+PASS actual console exclusion: existing mutex, bounded wait, IRQ/critical/startup rejection, release
+PASS: 200 consecutive errors do not flood logs; error bitmap retained; DMA restart drops stale index
+PASS actual USART3 drain: fragments, CRLF, multiline, DMA wrap, overflow resync, gap guard, TX timeout
+PASS DHT handshake: physical low/release triggers a complete validated frame
+PASS DHT early response: interrupt setup latency cannot discard the first falling edge
+PASS DHT unplug: released line high, release IRQ only, bounded NO_RESPONSE
+PASS DHT stuck-low: release stays low, no IRQ, safe input restored
+PASS DHT missing IRQ: released line high, pending edges, zero callbacks
+PASS DHT reconnect: fresh valid reading, last failure evidence retained
+PASS DHT excessive start: bounded failure, bus released, next read recovers
+PASS DHT datasheet response limits: 10/13/35us, stale PR cleared, other EXTI lines retained
+PASS DHT capture across uint32 microsecond wrap
+PASS actual arbiter/W25Q model: fan->SPI 100/100, SPI->fan 100/100, fresh JEDEC200/200, mode/nesting/no-pin-change-on-contention
+PASS emergency during SPI: deselect cleanup cannot raise shared CS/STBY after latched fault
+KV scan under 40ms task preemption: result=0 seq=2
+PASS actual KV/W25Q: scan survives task preemption after finding seq2, scheduler restored, busy polling yields
+PASS injected HAL TX/RX timeouts still fail closed; failed scan prevents writes until rescan, no data erased
+PASS actual W25Q/arbiter: identity, WEL, page/alignment validation, readback, busy timeout, failure cleanup, no MISO output, fault/ISR guards
+PASS vendor mapping: PA15 output-low, PB3 input-only, EXTI3 priority5, DHT/PC13 dispatch preserved
+PASS CubeMX/header: corrected pin roles, EXTI3 enabled, obsolete EXTI15 mapping removed
+PASS T-01 self-test timeout/fault/recovery and 150s warmup
+PASS T-02/T-03 radar-only, distance-only, strict <100cm dual 2s
+PASS T-04/T-05 smoke 3s and temperature >= threshold shortening to 1s
+PASS T-06/T-07 air10s, priority escalation, delayed downgrade/release10s
+PASS T-08 invalid/stale/disabled/missing snapshots fault without alarm
+PASS T-09 manual acknowledge, persistent condition reconfirm, disarm
+PASS T-10 runtime linkage, manual arbitration, pending disarm, faults and tick wrap
+PASS T-11 build UTC+8/leap day, backup time, bounded gateway queue, RTC failure
+PASS T-12 actual firmware hook: 50 mixed alarm/recovery cycles, zero failures
+PASS actual NetTask dispatch: queued -> committed done, failure retains old config, mode, gated outputs, ack/time/reboot

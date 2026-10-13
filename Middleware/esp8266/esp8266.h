@@ -10,7 +10,9 @@ typedef enum {
     NETWORK_CMD_SERVO,
     NETWORK_CMD_BUZZER,
     NETWORK_CMD_THRESHOLD,
-    NETWORK_CMD_REBOOT
+    NETWORK_CMD_REBOOT,
+    NETWORK_CMD_ACK,
+    NETWORK_CMD_TIME
 } network_cmd_kind_t;
 
 typedef struct {
