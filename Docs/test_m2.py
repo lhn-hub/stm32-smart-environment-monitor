@@ -8,7 +8,7 @@ def compile_run(name,source):
     (out/(name+'.c')).write_text(source,encoding='utf-8')
     subprocess.run(['D:/msys64/ucrt64/bin/gcc.exe','-std=c99','-Wall','-Wextra','-Werror',
       '-I','Drivers_Device/kvstore','-I','Drivers_Device/eventlog','-I','Drivers_Device','-I','BSP','-I','App','-I','Inc','-I','Drivers_Device/ec11','-I','Drivers_Device/oled_ssd1306','-I','App/menu',
-      '-I','Drivers_Device/sg90','-I','Drivers_Device/tb6612_fan','-I','Drivers_Device/oled_ui','-I','tmp/m2','tmp/m2/'+name+'.c','-o','tmp/m2/'+name+'.exe'],cwd=root,env=env,check=True)
+      '-I','Drivers_Device/sg90','-I','Drivers_Device/tb6612_fan','-I','Drivers_Device/oled_ui','-I','Middleware/esp8266','-I','tmp/m2','tmp/m2/'+name+'.c','-o','tmp/m2/'+name+'.exe'],cwd=root,env=env,check=True)
     subprocess.run([str(out/(name+'.exe'))],cwd=root,env=env,check=True)
 ec=(root/'Drivers_Device/ec11/ec11.c').read_text(encoding='utf-8')
 part=ec[ec.index('void ec11_reset'):ec.index('static uint8_t sample')]
@@ -104,6 +104,8 @@ int main(void){
 compile_run('menu',prefix+r'''
 #include "bsp_services.h"
 #include "datahub.h"
+#include "esp8266.h"
+int network_get_status(network_status_t *s){memset(s,0,sizeof(*s));return 0;}
 int datahub_snapshot(datahub_snapshot_t *p){memset(p,0,sizeof(*p));p->sensors[SENSOR_DHT11].value=260;p->sensors[SENSOR_DHT11].auxiliary=550;p->sensors[SENSOR_SMOKE].flags=p->sensors[SENSOR_AIR].flags=SENSOR_DISABLED;return 0;}
 int datahub_set_gas_limits(uint32_t s,uint32_t a){(void)s;(void)a;return 0;}
 #include "storage.h"

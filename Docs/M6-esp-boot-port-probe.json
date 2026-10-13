@@ -1,0 +1,9 @@
+{
+  "Port": "COM5",
+  "Baud": 74880,
+  "ListenSeconds": 30,
+  "Sent": "Nothing; read only",
+  "ReceivedBytes": 0,
+  "Text": "",
+  "Hex": ""
+}

@@ -14,7 +14,10 @@ static volatile uint32_t uart_error_bits;
 static uint32_t gap_count,error_count,error_bits,restart_failures,last_report;
 static uint32_t last_poll;
 static uint32_t tx_started;
+static uint32_t rx_bytes;
 static uint8_t discard;
+static uint32_t ipd_remaining;
+static int net_rx_restart(void);
 
 int bsp_i2c_recover(void)
 {
@@ -70,20 +73,61 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *uart)
 }
 int bsp_net_start(void)
 {
-    MX_USART3_UART_Init(); last_poll=HAL_GetTick();
-    if(HAL_UART_Receive_DMA(&huart3,rx,sizeof(rx))!=HAL_OK) return -1;
-    __HAL_UART_ENABLE_IT(&huart3,UART_IT_IDLE); return 0;
+    MX_USART3_UART_Init();
+    if (HAL_GPIO_ReadPin(ESP_RST_PORT, ESP_RST_PIN) == GPIO_PIN_RESET)
+        HAL_GPIO_WritePin(ESP_RST_PORT, ESP_RST_PIN, GPIO_PIN_SET);
+    return net_rx_restart();
+}
+static int net_rx_restart(void)
+{
+    (void)HAL_UART_AbortReceive(&huart3);
+    taskENTER_CRITICAL();
+    read_pos=0; line_len=0; discard=0; ipd_remaining=0;
+    memset(rx,0,sizeof(rx));
+    taskEXIT_CRITICAL();
+    last_poll=HAL_GetTick();
+    if(HAL_UART_Receive_DMA(&huart3,rx,sizeof(rx))!=HAL_OK)return -1;
+    __HAL_UART_ENABLE_IT(&huart3,UART_IT_IDLE);
+    return 0;
+}
+int bsp_net_hard_reset(void)
+{
+    HAL_GPIO_WritePin(ESP_RST_PORT,ESP_RST_PIN,GPIO_PIN_RESET);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    HAL_GPIO_WritePin(ESP_RST_PORT,ESP_RST_PIN,GPIO_PIN_SET);
+    LOGI("ESP复位释放 RST=%u RX=%u 波特率=%lu",
+         (unsigned)HAL_GPIO_ReadPin(ESP_RST_PORT,ESP_RST_PIN),
+         (unsigned)HAL_GPIO_ReadPin(ESP_RX_PORT,ESP_RX_PIN),(unsigned long)ESP_UART_BAUD);
+    LOGI("ESP引脚 CRH=0x%08lX ODR=0x%04lX IDR=0x%04lX",
+         (unsigned long)ESP_RST_PORT->CRH,(unsigned long)ESP_RST_PORT->ODR,
+         (unsigned long)ESP_RST_PORT->IDR);
+    return net_rx_restart();
+}
+char *bsp_net_tx_buffer(size_t *capacity)
+{
+    if(capacity)*capacity=sizeof(tx);
+    return (char *)tx;
+}
+int bsp_net_send_buffer(size_t length)
+{
+    if(!length || length>sizeof(tx) || huart3.gState!=HAL_UART_STATE_READY)return -1;
+    tx_started=HAL_GetTick();
+    return HAL_UART_Transmit_DMA(&huart3,tx,(uint16_t)length)==HAL_OK?0:-1;
 }
 int bsp_net_send(const void *data,size_t length)
 {
     /* NetTask is sole TX owner. Buffer lifetime extends until DMA completes. */
     if(!data || !length || length>sizeof(tx) || huart3.gState!=HAL_UART_STATE_READY) return -1;
     memcpy(tx,data,length);
-    tx_started=HAL_GetTick();
-    return HAL_UART_Transmit_DMA(&huart3,tx,(uint16_t)length)==HAL_OK?0:-1;
+    return bsp_net_send_buffer(length);
 }
 __weak void net_on_rx_line(const char *data,size_t length)
 { (void)length; LOGI("串口3接收：%s",data); }
+__weak void net_on_rx_bytes(const uint8_t *data,size_t length)
+{ (void)data; (void)length; }
+__weak void net_on_rx_prompt(void)
+{
+}
 void bsp_net_poll(void)
 {
     uint32_t now=HAL_GetTick();
@@ -100,11 +144,12 @@ void bsp_net_poll(void)
     }
     size_t write_pos=sizeof(rx)-__HAL_DMA_GET_COUNTER(huart3.hdmarx);
     write_pos%=sizeof(rx);
+    rx_bytes+=(uint32_t)((write_pos+sizeof(rx)-read_pos)%sizeof(rx));
     /* At115200 8N1, full512B ring lasts ~44ms. Conservative scheduling
      * gap guard discards uncertain data instead of accepting corrupted lines.
      */
     if(now-last_poll>APP_NET_RING_GUARD_MS || errors) {
-        read_pos=write_pos; line_len=0; discard=1;
+        read_pos=write_pos; line_len=0; discard=1; ipd_remaining=0;
         if(now-last_poll>APP_NET_RING_GUARD_MS) ++gap_count;
         error_count+=errors; error_bits|=bits;
         if(errors) {
@@ -115,6 +160,7 @@ void bsp_net_poll(void)
                 taskENTER_CRITICAL(); ++uart_errors; taskEXIT_CRITICAL();
             }
             read_pos=0; __HAL_UART_ENABLE_IT(&huart3,UART_IT_IDLE);
+            ipd_remaining=0;
             write_pos=0; /* old DMA write index is invalid */
         }
     }
@@ -124,9 +170,35 @@ void bsp_net_poll(void)
             /* A slow line callback can itself span a DMA lap. Drop the
              * uncertain suffix before touching any more ring bytes. */
             read_pos=(sizeof(rx)-__HAL_DMA_GET_COUNTER(huart3.hdmarx))%sizeof(rx);
-            line_len=0; discard=1; ++gap_count; break;
+            line_len=0; discard=1; ipd_remaining=0; ++gap_count; break;
+        }
+        if (ipd_remaining) {
+            uint8_t byte=rx[read_pos];
+            read_pos=(read_pos+1u)%sizeof(rx);
+            net_on_rx_bytes(&byte,1u);
+            --ipd_remaining;
+            continue;
         }
         char c=(char)rx[read_pos]; read_pos=(read_pos+1u)%sizeof(rx);
+        if (line_len==0u && c=='>') {
+            net_on_rx_prompt();
+            continue;
+        }
+        if (c==':' && line_len>=6u && !memcmp(line,"+IPD,",5u)) {
+            uint32_t length=0; size_t i;
+            int valid=1;
+            for(i=5u;i<line_len;i++) {
+                if(line[i]<'0' || line[i]>'9') { valid=0; break; }
+                length=length*10u+(uint32_t)(line[i]-'0');
+                if(length>sizeof(rx)) { valid=0; break; }
+            }
+            if(valid) {
+                ipd_remaining=length;
+                line_len=0;
+                discard=0;
+                continue;
+            }
+        }
         if(c=='\n') {
             if(!discard) { line[line_len]=0; net_on_rx_line(line,line_len); }
             line_len=0; discard=0;
@@ -141,9 +213,11 @@ void bsp_net_poll(void)
     if(now-last_report>=APP_NET_DIAGNOSTIC_MS &&
        (gap_count || error_count || restart_failures)) {
         last_report=now;
-        LOGW("串口3汇总：超时=%lu 错误=%lu 码=0x%02lX 重启失败=%lu",
+        LOGW("串口3汇总：超时=%lu 错误=%lu 码=0x%02lX 重启失败=%lu 字节=%lu RST=%u RX=%u",
              (unsigned long)gap_count,(unsigned long)error_count,
-             (unsigned long)error_bits,(unsigned long)restart_failures);
+             (unsigned long)error_bits,(unsigned long)restart_failures,(unsigned long)rx_bytes,
+             (unsigned)HAL_GPIO_ReadPin(ESP_RST_PORT,ESP_RST_PIN),
+             (unsigned)HAL_GPIO_ReadPin(ESP_RX_PORT,ESP_RX_PIN));
         gap_count=0; error_count=0; error_bits=0; restart_failures=0;
     }
 }

@@ -277,7 +277,9 @@ extern TIM_HandleTypeDef htim4;
 
 /* ESP8266 USART3: RX DMA1 CH3 circular; TX DMA1 CH2 normal. */
 #define ESP_UART                   huart3
+#ifndef ESP_UART_BAUD
 #define ESP_UART_BAUD              115200u
+#endif
 #define ESP_TX_PORT                GPIOB
 #define ESP_TX_PIN                 GPIO_PIN_10
 #define ESP_RX_PORT                GPIOB

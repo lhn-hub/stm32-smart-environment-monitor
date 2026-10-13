@@ -1,9 +1,21 @@
 #ifndef APP_CONFIG_H
 #define APP_CONFIG_H
 #include "bsp_pin.h"
-#define APP_FW_VERSION "0.6.0-dev"
+#if defined(__has_include)
+#if __has_include("app_secrets.h") && !defined(APP_NO_LOCAL_SECRETS)
+#include "app_secrets.h"
+#endif
+#endif
+#ifndef APP_NETWORK_PROVISION
+#define APP_NETWORK_PROVISION 0
+#endif
+#define APP_FW_VERSION "0.7.0-dev"
+#ifndef APP_WIFI_SSID
 #define APP_WIFI_SSID ""
+#endif
+#ifndef APP_WIFI_PASSWORD
 #define APP_WIFI_PASSWORD ""
+#endif
 #define APP_MQTT_HOST "broker.emqx.io"
 #define APP_MQTT_PORT 1883u
 #define APP_MQTT_TOPIC_ROOT "smshub/%s"
@@ -54,7 +66,7 @@
 #define APP_UART_TIMEOUT_MS 20u
 #define APP_LOG_LOCK_MS 50u
 #define APP_NET_LINE_SIZE 128u
-#define APP_NET_TX_SIZE 128u
+#define APP_NET_TX_SIZE 256u
 #define APP_NET_POLL_MS 10u
 #define APP_NET_RING_GUARD_MS 30u
 #define APP_NET_DIAGNOSTIC_MS 5000u
@@ -134,7 +146,9 @@
 #define APP_CFG_RESERVED (KV_RECORD_SIZE - 13u*4u - APP_CFG_SSID - 2u*APP_CFG_PASSWORD - APP_CFG_HOST - APP_CFG_USER - APP_CFG_DEVICE - 8u)
 #define APP_MQTT_USER ""
 #define APP_MQTT_PASSWORD ""
+#ifndef APP_DEVICE_DEFAULT
 #define APP_DEVICE_DEFAULT "sms-hub"
+#endif
 #define APP_MODE_DEFAULT 0u
 #define APP_MQTT_KEEPALIVE 60u
 #define APP_CONFIG_MAX_PERIOD_MS 3600000u

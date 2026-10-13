@@ -10,6 +10,10 @@
 #include "storage.h"
 #include "tb6612_fan.h"
 #include "m5_bench.h"
+#include "esp8266.h"
+#include "sg90.h"
+#include "bsp_services.h"
+#include "stm32f1xx_hal.h"
 int bsp_adc_start(void);
 int bsp_rtc_start(void);
 int bsp_net_start(void);
@@ -19,6 +23,8 @@ static volatile uint32_t stamps[APP_TASK_COUNT];
 static volatile uint32_t ready;
 static volatile uint32_t watchdog_tripped;
 static TaskHandle_t handles[APP_TASK_COUNT];
+static uint8_t reboot_pending;
+static uint32_t reboot_at;
 #if APP_WATCHDOG_TEST_ENABLED
 /* Dedicated bench build only: debugger sets ID 1..5 AFTER watchdog is active.
  * Production build has no injection variable or branch. Never tag this build.
@@ -29,10 +35,47 @@ static const char *names[APP_TASK_COUNT]={"MonitorTask","AlarmTask","NetTask","S
 static const uint16_t stacks[APP_TASK_COUNT]={APP_MONITOR_STACK,APP_ALARM_STACK,APP_NET_STACK,APP_SENSOR_STACK,APP_MENU_STACK,APP_LOG_STACK};
 static const uint8_t priorities[APP_TASK_COUNT]={APP_MONITOR_PRIORITY,APP_ALARM_PRIORITY,APP_NET_PRIORITY,APP_SENSOR_PRIORITY,APP_MENU_PRIORITY,APP_LOG_PRIORITY};
 
+static void network_commands_poll(uint32_t now)
+{
+    network_command_t command;
+    if (network_command_pop(&command) == 0) {
+        int result = -1;
+        unsigned reply = NETWORK_REPLY_REJECTED;
+        switch (command.kind) {
+        case NETWORK_CMD_ARM:
+        case NETWORK_CMD_THRESHOLD:
+            result = storage_set(command.field, command.value);
+            reply = result ? NETWORK_REPLY_REJECTED : NETWORK_REPLY_QUEUED;
+            break;
+        case NETWORK_CMD_FAN:
+            result = fan_set((unsigned)command.value);
+            reply = result ? NETWORK_REPLY_REJECTED : NETWORK_REPLY_DONE;
+            break;
+        case NETWORK_CMD_SERVO:
+            result = servo_write((unsigned)command.value);
+            reply = result ? NETWORK_REPLY_REJECTED : NETWORK_REPLY_DONE;
+            break;
+        case NETWORK_CMD_BUZZER:
+            result = beep_ms((uint16_t)command.value);
+            reply = result ? NETWORK_REPLY_REJECTED : NETWORK_REPLY_DONE;
+            break;
+        case NETWORK_CMD_REBOOT:
+            reply = NETWORK_REPLY_ACCEPTED;
+            reboot_pending = 1;
+            reboot_at = now + 1000u;
+            result = 0;
+            break;
+        default:
+            break;
+        }
+        network_command_reply(&command, reply);
+    }
+}
+
 static void worker(void *argument)
 {
     unsigned id=(unsigned)(uintptr_t)argument;
-    uint32_t last_status=0,last_tx=0,boot=HAL_GetTick();
+    uint32_t last_status=0,boot=HAL_GetTick();
     int started=0,wd=0,ui_started=0;
     for(;;) {
         uint32_t now=HAL_GetTick();
@@ -42,7 +85,10 @@ static void worker(void *argument)
         if(!started) {
             if(id==5 && !(ready&(1u<<3))){vTaskDelay(pdMS_TO_TICKS(APP_MONITOR_PERIOD_MS));continue;}
             if(id==5)storage_start();
-            if(id==2 && bsp_net_start()) bsp_panic("串口3初始化失败");
+            if(id==2) {
+                network_init();
+                if(bsp_net_start()) bsp_panic("串口3初始化失败");
+            }
             if(id==3) {
                 if(bsp_adc_start()) bsp_panic("ADC初始化失败");
                 if(bsp_rtc_start()) LOGE("RTC初始化失败");
@@ -79,9 +125,12 @@ static void worker(void *argument)
         }
         if(id==2) {
             bsp_net_poll();
-            if(now-last_tx>=APP_NET_TEST_MS) {
-                last_tx=now;
-                if(bsp_net_send(APP_NET_TEST_LINE,sizeof(APP_NET_TEST_LINE)-1u)) LOGW("串口3发送忙");
+            network_poll(now);
+            network_commands_poll(now);
+            if (reboot_pending && (network_reboot_response_sent() ||
+                                   (int32_t)(now - reboot_at) >= 0)) {
+                reboot_pending = 0;
+                NVIC_SystemReset();
             }
         }
         if(id==4) {

@@ -19,9 +19,11 @@ test=r'''
 #include "w25q64.h"
 static uint32_t applied_smoke,applied_air;
 typedef struct {unsigned n,size,head,tail,count;uint8_t data[128];} TestQueue;
-void *xSemaphoreCreateMutex(void){return malloc(1);}
-int xSemaphoreTake(void *m,unsigned ms){(void)ms;return m!=NULL;}
-int xSemaphoreGive(void *m){return m!=NULL;}
+typedef struct {int held;} TestMutex;
+static unsigned view_held;
+void *xSemaphoreCreateMutex(void){return calloc(1,sizeof(TestMutex));}
+int xSemaphoreTake(void *m,unsigned ms){TestMutex *lock=m;(void)ms;if(!m)return 0;assert(!lock->held);lock->held=1;++view_held;return 1;}
+int xSemaphoreGive(void *m){TestMutex *lock=m;if(!m)return 0;assert(lock->held);lock->held=0;--view_held;return 1;}
 void *xQueueCreate(unsigned n,unsigned size){TestQueue*q=calloc(1,sizeof(*q));assert(n*size<=128);q->n=n;q->size=size;return q;}
 int xQueueSend(void *v,const void*p,unsigned ms){TestQueue*q=v;(void)ms;if(q->count==q->n)return 0;memcpy(q->data+q->tail*q->size,p,q->size);q->tail=(q->tail+1)%q->n;q->count++;return 1;}
 int xQueueReceive(void *v,void*p,unsigned ms){TestQueue*q=v;(void)ms;if(!q->count)return 0;memcpy(p,q->data+q->head*q->size,q->size);q->head=(q->head+1)%q->n;q->count--;return 1;}
@@ -34,14 +36,22 @@ unsigned __get_IPSR(void){return 0;}
 uint32_t rtc_get(void){return 12345;}
 int datahub_set_gas_limits(uint32_t a,uint32_t b){applied_smoke=a;applied_air=b;return 0;}
 void bsp_log(const char*l,const char*f,...){(void)l;(void)f;}
+int network_event_enqueue(uint32_t t,int32_t p,int32_t a,uint32_t time)
+{(void)t;(void)p;(void)a;(void)time;return 0;}
 static uint8_t flash[FLASH_LOG_END_EXCLUSIVE],backup[sizeof(flash)];
 static config_t c;
 static event_record_t records[APP_STORAGE_RECENT];
 static jmp_buf reboot;
 static int cut=-1,writes,program_error;
+static unsigned event_reads,fail_event_read,check_unpublished;
 static unsigned erase_count;
 static void mutate(void){if(cut==0)longjmp(reboot,1);if(cut>0)--cut;++writes;}
-int w25q_read(uint32_t a,void *p,size_t n){assert(n&&n<=256&&a+n<=sizeof(flash));memcpy(p,flash+a,n);return 0;}
+int w25q_read(uint32_t a,void *p,size_t n){
+ assert(!view_held&&n&&n<=256&&a+n<=sizeof(flash));
+ if(check_unpublished){event_record_t r;unsigned nr;assert(storage_recent(0,&r,&nr)==-1&&nr==0);}
+ if(a>=FLASH_LOG_ADDR && ++event_reads==fail_event_read)return -1;
+ memcpy(p,flash+a,n);return 0;
+}
 int w25q_program(uint32_t a,const void *p,size_t n){
  const uint8_t *s=p;size_t i;if(program_error)return -1;assert(n&&n<=256-(a%256)&&a+n<=sizeof(flash));
  assert(a+n<=FLASH_RSVD_ADDR || a>=FLASH_LOG_ADDR);
@@ -134,11 +144,98 @@ int main(void){
   assert(!storage_recent(0,&rec,&nr)&&rec.type==EVENT_CONFIG);
   for(i=0;i<APP_STORAGE_QUEUE;i++)assert(!storage_event(EVENT_MANUAL,(int32_t)i,0));
   assert(storage_event(EVENT_MANUAL,99,0)==-1);for(i=0;i<APP_STORAGE_QUEUE;i++)storage_poll();
+  for(i=0;i<2100;i++){
+   assert(!storage_event(EVENT_MANUAL,(int32_t)i,-(int32_t)i));
+   event_reads=0;storage_poll();assert(event_reads==3);
+   assert(!log_read_last(APP_STORAGE_RECENT,records,&n));
+   for(k=0;k<n;k++){
+    assert(!storage_recent(k,&rec,&nr)&&nr==n);
+    assert(!memcmp(&rec,&records[k],sizeof(rec)));
+   }
+   assert(storage_recent((unsigned)n,&rec,&nr)==-1&&nr==n);
+  }
+  puts("PASS recent cache matches committed Flash after 2100 appends/sector/ring wrap; only 3 event reads per append");
   assert(!storage_set(CFG_TEMP,77));program_error=1;storage_poll();program_error=0;
   assert(!storage_get_fields(fields,&status)&&!status.ready&&status.errors&&fields[CFG_TEMP]==66);
   assert(storage_set(CFG_TEMP,88)==-1);assert(!kv_load(&c)&&c.temp_x10==660);
  }
  puts("PASS actual storage queue: 100 fan waits preserve queued config/ready state, offline/busy/full refusal, commit-only apply, failure retains prior config");
+ reset_media();assert(!storage_setup());storage_start();
+ for(i=0;i<APP_STORAGE_RECENT+3;i++){assert(!storage_event(EVENT_MANUAL,(int32_t)i,7));storage_poll();}
+ {int32_t values[CFG_FIELD_COUNT];storage_status_t s;event_record_t rec;unsigned nr;uint32_t errors;
+  assert(!storage_get_fields(values,&s));errors=s.errors;
+  for(k=0;k<APP_STORAGE_RECENT;k++)assert(!storage_recent(k,&records[k],&nr));
+  assert(!storage_event(EVENT_MANUAL,999,9));event_reads=0;fail_event_read=3;
+  storage_poll();fail_event_read=0;
+  assert(!storage_get_fields(values,&s)&&!s.ready&&s.errors==errors+1);
+  for(k=0;k<APP_STORAGE_RECENT;k++){
+   assert(!storage_recent(k,&rec,&nr)&&nr==APP_STORAGE_RECENT);
+   assert(!memcmp(&rec,&records[k],sizeof(rec)));
+  }
+  assert(storage_event(EVENT_MANUAL,1000,0)==-1&&!bus_held);
+ }
+ puts("PASS latest-event read failure stops writes and preserves the entire previously published cache");
+ reset_media();assert(!eventlog_init());
+ for(i=0;i<25;i++)assert(!log_append(i,EVENT_MANUAL,(int32_t)i,0));
+ assert(!storage_setup());event_reads=0;fail_event_read=FLASH_LOG_SIZE/LOG_ITEM_SIZE+5;
+ check_unpublished=1;storage_start();check_unpublished=0;fail_event_read=0;
+ {int32_t values[CFG_FIELD_COUNT];storage_status_t s;event_record_t rec;unsigned nr;
+  assert(!storage_get_fields(values,&s)&&!s.ready&&s.errors);
+  assert(storage_recent(0,&rec,&nr)==-1&&nr==0);
+  check_unpublished=1;storage_start();check_unpublished=0;
+  assert(!storage_get_fields(values,&s)&&s.ready);
+  assert(!log_read_last(APP_STORAGE_RECENT,records,&n)&&n==APP_STORAGE_RECENT);
+  for(k=0;k<n;k++){assert(!storage_recent(k,&rec,&nr)&&nr==n);assert(!memcmp(&rec,&records[k],sizeof(rec)));}
+ }
+ puts("PASS startup publishes no partial cache on read failure; retry loads complete newest20 without Flash I/O under view mutex");
+ /* Sparse committed records after torn/corrupt slots: rotation can erase a cached tail. */
+ reset_media();
+ memcpy(flash+FLASH_LOG_ADDR+125*LOG_ITEM_SIZE,&records[0],sizeof(records[0]));
+ memcpy(flash+FLASH_LOG_ADDR+128*LOG_ITEM_SIZE,&records[1],sizeof(records[1]));
+ assert(!storage_setup());storage_start();
+ for(i=0;i<2;i++){assert(!storage_event(EVENT_MANUAL,400+(int32_t)i,0));storage_poll();}
+ assert(!log_read_last(APP_STORAGE_RECENT,records,&n));
+ {event_record_t rec;unsigned nr;
+  for(k=0;k<n;k++){assert(!storage_recent(k,&rec,&nr)&&nr==n);assert(!memcmp(&rec,&records[k],sizeof(rec)));}
+  assert(storage_recent((unsigned)n,&rec,&nr)==-1&&nr==n);
+ }
+ puts("PASS sparse-media sector rotation trims erased cached records to the committed Flash count");
+#if APP_NETWORK_PROVISION
+ reset_media();assert(kv_load(&c)==1);
+ c.temp_x10=630;c.distance_cm=44;c.smoke_ms=600;c.air_ms=800;c.mode=1;
+ strcpy(c.ssid,"old-network");strcpy(c.wifi_password,"old-pass");strcpy(c.device,"old-device");
+ memset(c.reserved,0xa5,sizeof(c.reserved));assert(!kv_save(&c));old=c.seq;
+ assert(!eventlog_init());assert(!log_append(99,EVENT_MANUAL,49,0));
+ assert(!storage_setup());storage_start();assert(!kv_load(&c)&&c.seq==old+1);
+ assert(!strcmp(c.ssid,APP_WIFI_SSID)&&!strcmp(c.wifi_password,APP_WIFI_PASSWORD));
+ assert(!strcmp(c.device,APP_DEVICE_DEFAULT)&&c.temp_x10==630&&c.distance_cm==44);
+ assert(c.smoke_ms==600&&c.air_ms==800&&c.mode==1&&c.reserved[0]==0xa5);
+ assert(!log_read_last(2,records,&n)&&n==2&&records[1].parameter==49);
+ old=c.seq;storage_start();assert(!kv_load(&c)&&c.seq==old);
+ strcpy(c.ssid,"old-network");assert(!kv_save(&c));old=c.seq;
+ assert(!storage_setup());program_error=1;storage_start();program_error=0;
+ {int32_t values[CFG_FIELD_COUNT];storage_status_t s;
+  assert(!storage_get_fields(values,&s)&&!s.ready&&s.errors);
+  assert(!kv_load(&c)&&c.seq==old&&!strcmp(c.ssid,"old-network"));}
+ puts("PASS local network provisioning: legacy thresholds/mode/reserved/events survive, idempotent reboot, failed commit leaves old KV valid and storage offline");
+#endif
+#if APP_STORAGE_STRESS_ENABLED
+ reset_media();assert(!storage_setup());storage_start();
+ extern volatile uint32_t storage_bench_request;
+ storage_bench_request=2;
+ for(i=0;i<APP_STORAGE_EVENT_STRESS;i++)storage_poll();
+ assert(!log_read_last(APP_STORAGE_RECENT,records,&n)&&n==APP_STORAGE_RECENT);
+ {event_record_t rec;unsigned nr;
+  for(k=0;k<n;k++){assert(!storage_recent(k,&rec,&nr)&&nr==n);assert(!memcmp(&rec,&records[k],sizeof(rec)));}
+ }
+ storage_bench_request=1;
+ for(i=0;i<APP_STORAGE_STRESS_WRITES;i++)storage_poll();
+ {int32_t values[CFG_FIELD_COUNT];storage_status_t s;
+  assert(!storage_get_fields(values,&s)&&s.ready&&values[CFG_TEMP]==50);
+  assert(!kv_load(&c)&&c.temp_x10==500);
+ }
+ puts("PASS storage bench cache publication: 2304 events match Flash, 500 KV writes restore original threshold");
+#endif
  return 0;
 }
 '''
@@ -146,8 +243,19 @@ int main(void){
 (OUT/'semphr.h').write_text('typedef void* SemaphoreHandle_t;\nSemaphoreHandle_t xSemaphoreCreateMutex(void);\nint xSemaphoreTake(void*,unsigned);\nint xSemaphoreGive(void*);\n')
 (OUT/'queue.h').write_text('typedef void* QueueHandle_t;\nQueueHandle_t xQueueCreate(unsigned,unsigned);\nint xQueueSend(void*,const void*,unsigned);\nint xQueueReceive(void*,void*,unsigned);\nunsigned uxQueueMessagesWaiting(void*);\n')
 (OUT/'test.c').write_text(test)
-args=['D:/msys64/ucrt64/bin/gcc.exe','-std=c99','-O1','-Wall','-Wextra','-Werror']
-for path in ['tmp/storage-test','Drivers_Device','App','BSP','Drivers_Device/kvstore','Drivers_Device/eventlog','Drivers_Device/w25q64']:args+=['-I',path]
+args=['D:/msys64/ucrt64/bin/gcc.exe','-std=c99','-O1','-Wall','-Wextra','-Werror','-DAPP_NO_LOCAL_SECRETS']
+for path in ['tmp/storage-test','Drivers_Device','App','BSP','Drivers_Device/kvstore','Drivers_Device/eventlog','Drivers_Device/w25q64','Middleware/esp8266']:args+=['-I',path]
 args+=['tmp/storage-test/test.c','Drivers_Device/kvstore/kvstore.c','Drivers_Device/eventlog/eventlog.c','App/storage.c','-o','tmp/storage-test/test.exe']
 subprocess.run(args,cwd=ROOT,env=env,check=True)
 subprocess.run([str(OUT/'test.exe')],cwd=ROOT,env=env,check=True)
+provision=args+['-DAPP_NETWORK_PROVISION=1','-DAPP_WIFI_SSID="test-network"','-DAPP_WIFI_PASSWORD="test-pass"','-DAPP_DEVICE_DEFAULT="test-device"']
+subprocess.run(provision,cwd=ROOT,env=env,check=True)
+subprocess.run([str(OUT/'test.exe')],cwd=ROOT,env=env,check=True)
+stress_config=OUT/'app_config.h'
+stress_config.write_text((ROOT/'App/app_config.h').read_text(encoding='utf-8').replace(
+    '#define APP_STORAGE_STRESS_ENABLED 0', '#define APP_STORAGE_STRESS_ENABLED 1'),encoding='utf-8')
+try:
+    subprocess.run(args,cwd=ROOT,env=env,check=True)
+    subprocess.run([str(OUT/'test.exe')],cwd=ROOT,env=env,check=True)
+finally:
+    stress_config.unlink()

@@ -1,0 +1,8 @@
+{
+  "Port": "COM5",
+  "Baud": 115200,
+  "Sent": "AT plus CRLF only",
+  "ReceivedBytes": 0,
+  "Text": "",
+  "Hex": ""
+}

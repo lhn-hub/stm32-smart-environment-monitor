@@ -220,3 +220,76 @@
 - 待用户确认后继续工具链、CubeMX 工程生成与 M0 验收；无编译、下载、串口、OLED 或 map 成功声明。
 - 核对真实 EXE：Keil 5.43.1.0；CubeMX EXE FileVersion=6.18.1-RC2，与注册表 6.17.0 不符，已记录，待确认运行版本。
 - 最后检查三份记录存在且非空；未发现匹配的已连接 DAP/CH340 设备。
+# 2026-10-12 M6无线通信
+- 已完成Ponytail、STM32/FreeRTOS、embedded-systems、planning-with-files技能预检并读取现有计划。
+- 已核对M5资源、NetTask/UART DMA/IDLE、ESP8266资料和12F/ESP-01接线差异；确认优先内置MQTT，实机版本与能力待测。
+- 下一步实现最小AT/MQTT层并更新Keil工程、主机测试和M6验收文档。
+
+# 2026-10-13 M6实板验收流程
+- 已读取用户最新串口日志并与Docs/M6-acceptance.md逐项比对。
+- 本次日志可作为本地基线：Flash/KV/事件、DHT、超声、堆、任务栈和看门狗正常；仅有1次串口3超时汇总。
+- 已确认后续必须按冷启动、MQTT消息、命令、5轮路由器断电、LWT、4小时堆稳定性逐项留证，不能以当前日志宣称M6硬件DoD通过。
+
+# 2026-10-13 MQTTX现场联调
+- 用户授权配置本机MQTTX并测试已连接开发板。已检测COM5和MQTTX 1.13.1；随后通过USB标识确认FireDAP CMSIS-DAP已连接，纠正最初名称筛选漏检。
+- 正在采集COM5只读日志；当前电脑热点5GHz，需确认2.4GHz可用网络。
+- MQTTX电脑端实际收发回显通过，订阅已生效。用户Esc中止过UI操作，随后提供热点凭据并明确已切换2.4GHz，继续原联调。
+- 当前netsh确认热点2.4GHz/频道11；实现保留旧KV其它字段的本地网络配置提交，待主机回归和实机下载。
+- 实际C存储普通/配置回归、M6主机模型通过；Flash55172B/RAM20176B。FireDAP首次现场下载校验通过，旧KV序号4->5且事件保留；45秒串口证据归档Docs/M6-live-startup.log。
+- ESP未上线，USART3约每9秒帧错误0x04；加入启动阶段应答和AT超时状态诊断，继续定位，未发送执行器命令。
+- 复测AT状态2超时，临时74880启动日志试验后恢复115200。诊断寄存器证实PB9推挽输出/ODR=高但IDR=低，运行5秒仍RST/RX低、DMA观测字节0；需断电检查外部复位链路。
+- 最终下载/校验/运行成功，KV保持序号5；Flash55504B/RAM20176B。UART回归最初静态诊断桩因日志宏丢弃参数触发unused-function，改非静态桩后0警告通过；未禁用告警。
+- Docs/M6-live-test.md整理实际结果与硬件阻塞，最终串口证据Docs/M6-uart-final.log；MQTTX独立订阅已完成。已提醒用户断电及提供模块/拓展板线序照片，串口已关闭，未创建tag。
+
+# 2026-10-13 修正接线后复测
+- 用户确认上一轮接线错误且已修正，重新授权检测；保留此前失败证据，不再以其判定当前硬件状态。
+- 重新枚举确认FireDAP及CH340正常，日志口现为COM6；复用既有固件和KV网络配置，先采集45秒实时日志。
+- AT/GMR恢复，实机AT1.7.4.0/SDK3.0.5，运行态RST/RX高且收到DMA字节；仍有UART错误/超时，无ONLINE。
+- 修正MQTT探测为现有实际配置命令，增加只打印OK/ERROR/FAIL的安全诊断；实际C回归RED->GREEN，并覆盖拒绝重试/复位；原UART回归通过。
+- Keil0错误0警告，Flash55500B/RAM20176B；FireDAP在12:16:51实际下载/校验/启动，KV仍seq5、存储944ms就绪。
+- 新启动5轮各3次配置均ERROR，共15次，未进入CWJAP；日志及HEX哈希已归档，脚本核验计数、版本、KV、无ONLINE及密码未泄漏。
+- 选择兼容ESP-AT内置MQTT升级路径；Docs/M6-live-test.md补齐结果、历史边界及需人工改下载接线的步骤。未下载/安装/刷写ESP，未下发执行器指令、未打tag。两次采样串口均已释放。
+
+# 2026-10-13 M6内存优化
+- 用户已断开ESP8266，要求优先优化逻辑和RAM。当前可核验基线Flash55500B/RAM20176B，静态余量304B、此前实测堆824B。
+- 读取Ponytail full、STM32/FreeRTOS、embedded-systems及内存优化参考、planning-with-files；不委派、不动ESP固件、不缩减验收功能。
+- 删除640B刷新副本并将菜单只读指针表移至RO；启动期间count=0不发布半成品，运行时仅读最新CRC有效记录再短锁更新。
+- 新增2100次追加/整环覆盖逐字节比对、3次事件读取预算、读取失败保留完整旧快照、启动读取期间读者检查、稀疏介质旋转回归。保留原逐字节掉电及KV500测试。
+- 稀疏记录回归先RED后GREEN：复用eventlog.available限制recent_count。正常/配置回归、Flash仲裁、菜单、M5、M6、UART、M3、DHT与映射9组均通过；M2补齐此前遗漏的M6离线状态测试桩。
+- 当前仅有COM1/COM2，无FireDAP/CH340匹配设备；本轮不能下载或实板采集，继续归档软件交付而不冒充板测通过。
+- 最终9组回归全部通过（存储普通/配置/压力三构建）；Keil全量0错误0警告，Flash55588B/RAM19448B，相比本轮基线+88B/-728B。未更改11KB heap、任务栈或20条离线事件要求。
+- 归档Docs/M6-memory-optimization.md、M6-memory-before/after-map/build、M6-memory-tests.log及M6-memory-optimized.hex；HEX SHA256=A9F130132965BC60E91B881138BFE5B62CBC2F9F778B71FCB07433FEEF4E098A，与最终输出一致。
+- Phase16软件优化完成；未烧录、未ESP升级、未MQTT或4小时实测、未提交/tag。下一步须重新接入开发板后复测新固件。
+
+# 2026-10-13 ESP8266升级执行
+- 用户通过批注明确授权备份、Flash容量/串口核验及兼容MQTT AT刷写；开始Phase17。
+- 已应用Ponytail full、embedded-systems及planning-with-files，恢复既有计划；不委派、不安装插件、不改变账户或权限。
+- 先核对本机串口和直连关系，再核对官方镜像与工具；原固件备份通过前禁止擦写。
+- COM5的6秒只读数据证实仍为STM32日志，已释放串口；未发送AT或下载同步。证据保存Docs/M6-esp-upgrade-port-probe.log。
+- web工具返回空白；改由官方GitHub API/raw核验v2.2.1.0_esp8266发布、下载包和AT引脚文档，不依据空白工具结果断言。
+- 官方esptool5.1.0/AT2.2.1.0包已放tmp/esp-upgrade；esptool ZIP哈希与发布digest一致，version/help成功。未改全局Python，仅项目内准备官方生成器依赖。
+- 官方参数生成器复现发布factory_param.bin全部4096字节；GPIO1/3副本断言仅4字节变化，115200和其余参数保持。官方sdkconfig含MQTT命令，实际启动兼容性未验。
+- 用户最新说明只能通过开发板给扩展板供电；已修正方案，保留原电源链。读取并视觉核对核心板第5/6页与模块原理图，确认可拔J5-7/8、9/10串口跳帽，复用3V3板载CH340直连ESP。
+- 新增Docs/M6-esp-upgrade.md，更新旧现场说明；等待用户物理改线。未识别实际ESP容量、未备份/擦写、未下载STM32优化HEX、未提交/tag。
+- 用户报告改线完成；重新枚举CH340 COM5与FireDAP在线。ROM只读flash-id使用115200/no-reset/no-stub失败（No serial data received），退出码2，日志已保存，未备份/擦写。继续区分运行模式与无串口链路，不重复同一失败。
+- COM5只读AT探测2.5秒为0字节；74880被动启动监听30秒亦为0字节。已关闭串口，未擦写。等待用户确认ESP VDD/GND、IO0、模块RST边沿及J5 CH340侧TX/RX接点。
+
+# 2026-10-13 改用现有 AT 固件承载 MQTT
+- 用户明确不升级 ESP8266，保留 AT1.7.4.0；升级/备份路径暂停。
+- 选择 TCP AT + STM32 手写 MQTT 3.1.1，避免依赖旧固件不支持的 `AT+MQTT*` 命令。
+- 已完成串口 `+IPD`/`>` 分帧、MQTT CONNECT/SUBSCRIBE/PUBLISH 状态机和流式下行命令解析；`Docs/test_m6.py`、`Docs/test_uart.py` 及 M2/M3/M5/存储回归通过。
+- 初版 Keil 0错误0警告：Flash56164B、RAM19672B；初版镜像哈希=`05A4D26020B4BA1996119D59CAA0BD5C3DC9059420398F76967E8CF7E876A308`。实机 MQTTX、断网、LWT、4小时堆稳定性仍待上板。
+
+# 2026-10-13 现有固件路线收口
+- 重新执行 M6 主机模型、USART3 DMA/IDLE 二进制分帧和 Keil 构建：全部通过，构建仍为 0 错误/0 警告，Flash 56172B、RAM 19672B；更新 HEX SHA256 为 `EECD9DDA8DBDA1EE07D21DE4820AA63B27101FA54D7132D52785075DDC869B73`。
+- 现场文档已移除当前流程中的 ESP 下载/升级步骤，保留升级材料仅作历史记录；下一步只烧录 STM32 HEX 并按 MQTTX、断网/LWT、4 小时稳定性清单实测。
+
+# 2026-10-13 TCP-MQTT实机核心链路通过
+- 用户提供的串口日志在 `[14296]` 报告 `网络在线 IP=10.97.164.35`；同一轮启动包含 `AT+GMR` 回显、DHT/超声采样和看门狗正常运行记录。
+- MQTTX 截图显示设备专用 `smshub/sms-hub-8e7c4b91/status` retained `online`，并收到 `smshub/sms-hub-8e7c4b91/telemetry` 两条约 5 秒间隔消息，payload 中 `wifi=1,mqtt=1`。
+- 归档证据：`Docs/M6-mqtt-live-20261013.log`、`Docs/M6-mqttx-live-20261013.png`。核心在线/telemetry 已通过；cmd/resp、断网/LWT、4 小时稳定性仍待实测。
+- 提交前复核：M6、UART、M2菜单、存储普通/配置/压力三构建回归全部通过；Keil 全量 0错误0警告，Flash56172B/RAM19672B，交付 HEX 与本轮构建哈希一致。
+- 本次仅本地 Git 归档相关源码、测试、文档和证据；本地凭据、HEX/AXF、模块资料和重复 CubeMX 目录不纳入，不发布 v0.7。启动串口错误、RSSI=0 和超声累计超时作为已知遗留保留。
+- 最终检查：51个拟提交文件均未匹配本地密码，`App/app_secrets.h`、交付 HEX 和 AXF 确认受 Git 忽略规则保护；`git diff --check` 通过。
+- 暂存新文件后补做源码/文档空白检查：清理三份文档的末尾空行；Keil 原始构建/下载日志与 map 保留工具输出中的尾随空格，不改写现场证据。
+- 已完成本地 M6 核心链路提交，核验51个相关文件入库、暂存区和已跟踪工作文件干净；15个原始模块资料/重复 CubeMX 文件保持未跟踪。没有推送或发布 `v0.7`。

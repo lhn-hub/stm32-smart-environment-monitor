@@ -1,5 +1,108 @@
 # M0 前置核查记录
 
+## 2026-10-13 TCP-MQTT实机证据核对
+- 用户串口日志在 14.296 秒报告网络在线；MQTTX 在 18:20:32.662 收到设备专用 status retained online，18:20:37.350 和 18:20:42.228 收到 telemetry，间隔 4.878 秒。
+- 两条 telemetry 按截图转录后均为合法 JSON，字段顺序符合清单，wifi/mqtt 均为1；并非截图上方 11:10 的电脑回环消息。
+- 归档日志与截图哈希均与附件一致。5~50秒的10次堆采样均为824B、看门狗故障0，网络栈最低余242/512字。
+- 启动 AT/GMR 超时、USART3错误12次（0x06）、间隔保护丢弃、RSSI=0 和超声累计失败109次仍存在；未据此声称全部模块长期稳定。
+- 核心链路可提交；全部cmd/resp、5轮断网、LWT及4小时稳定性证据仍缺失，不发布v0.7。
+
+## 2026-10-13 现有 AT 固件承载 MQTT 方案
+- 用户明确选择保留 ESP8266 现有 `AT1.7.4.0 / SDK3.0.5`，停止兼容 ESP-AT 升级、Flash 备份和擦写路线。
+- 该固件已实机拒绝 `AT+MQTTUSERCFG`、`AT+MQTTCONNCFG`、`AT+MQTTCONN`、`AT+MQTTSUB/PUB`；继续重试不会改变能力。
+- 采用 ESP AT 1.x 通用 TCP 命令：`AT+CWMODE=1`、`AT+CWJAP`、`AT+CIPMUX=0`、`AT+CIPMODE=0`、`AT+CIPSTART="TCP",host,1883`、`AT+CIPSEND=n`。STM32 端生成 MQTT 3.1.1 CONNECT/SUBSCRIBE/PUBLISH，并解析 `+IPD` 二进制 CONNACK/SUBACK/PUBLISH。
+- 现有串口行分帧不能承载 MQTT 二进制，必须增加 `+IPD,<len>:` 长度模式和 `>` 提示符回调；保留原换行行解析、DMA/IDLE、30ms 丢弃保护。
+- 资源策略：复用现有 256 字节 TX DMA 缓冲；MQTT 下行命令采用流式解析和 96 字节 payload，避免新增 256 字节 RX 副本。实际 Flash/RAM 以 Keil map 为准，未提前声称预算通过。
+
+## 2026-10-13 TCP-MQTT软件实现与验证
+- `BSP/bsp_bus.c` 现在保留原行缓冲，同时识别 `+IPD,<len>:`、逐字节转发二进制 MQTT，并在 `>` 到达时结束 `CIPSEND` 请求；DMA错误、30ms间隔保护会清空未完成的 IPD 帧，避免错位。
+- `Middleware/esp8266/esp8266.c` 状态序列为 `CWMODE -> CWJAP -> CIFSR -> CWJAP? -> CIPMUX -> CIPMODE -> CIPSTART -> MQTT CONNECT -> SUBSCRIBE -> ONLINE`。CONNECT 带 60s keepalive、clientId 唯一后缀和 retained LWT；telemetry 每5s产生业务流量，满足 keepalive 的最大无流量间隔。
+- MQTT下行仅接受 QoS0 PUBLISH 到 `smshub/{device}/cmd`，payload 上限96字节；CONNACK、SUBACK返回码校验，畸形剩余长度和越界命令 fail-closed。
+- `Docs/test_m6.py`、`Docs/test_uart.py`、M2/M3/M5/Flash/存储/DHT/映射回归通过；Keil 0错误0警告，Flash56172B、RAM19672B；HEX SHA256 为 `EECD9DDA8DBDA1EE07D21DE4820AA63B27101FA54D7132D52785075DDC869B73`。
+- 以上均为软件/主机证据；未把现有 ESP 的 TCP 实机连接、MQTTX消息、路由器断电、LWT、4小时堆稳定性写成已通过。
+
+## 2026-10-13 TCP-MQTT重连边界
+- 发现 TCP 断开时若 MQTT PUBLISH 只收到半帧，解析器状态可能残留到下一次连接；在进入复位和失败轮次时清理 AT 请求及 MQTT 接收状态。
+- 新增主机回归覆盖“半帧 PUBLISH -> CLOSED -> 重连 -> CONNACK/SUBACK”，通过；不改变原有 20 条事件缓存或本地功能。
+
+## 2026-10-13 ESP8266升级执行
+- 用户报告改线完成并授权检测成功后刷写。当前CH340仍COM5；第一次ROM只读flash-id探测（115200/no-reset/no-stub，2次连接尝试）失败：No serial data received。证据Docs/M6-esp-rom-probe.log；没有获得芯片/容量证据，没有备份、擦除或写Flash。
+- 不对同一接线盲目重复刷写；下一步用非持久化AT探测区分“仍在运行模式”与“串口无数据”，必要时请用户在GPIO0低状态对ESP本身复位（开发板RESET不能替代）。
+- 随后COM5只读发送AT\r\n的2.5s探测仍收到0字节；74880波特率30s被动启动监听也收到0字节。当前无法区分ESP未供电、CH340 TX/RX侧接错、ESP RST未产生边沿或GPIO0未真正拉低；不能开始容量读取/备份/刷写。
+- Pnp确认FireDAP和CH340(COM5)在线；6秒只读采样实际为STM32任务日志（Docs/M6-esp-upgrade-port-probe.log），不是ESP ROM下载口。串口已释放，未发AT/下载同步、未擦写。
+- 当前系统Python缺esptool和pyserial；将准备项目内官方工具，不改全局Python或插件。
+- 官方GitHub API实际返回已核验：v2.2.1.0_esp8266发布于2021-08-06，正文提供ESP8266-IDF-AT_V2.2.1.0.zip，文档归属release-v2.2.0.0_esp8266。本次按用户指定版本核对，不把2.2.1.0称为最新版。
+- 官方AT引脚文档明确ESP8266可选GPIO15/TX、GPIO13/RX或GPIO1/TX、GPIO3/RX，factory_param_data.csv中的CTS/RTS不用时应为-1。当前模块RXD/TXD对应ROM GPIO3/GPIO1，需核对发布包及官方配置工具，不能盲刷默认引脚映像。
+- web工具调用无可见页面内容，因此改用GitHub API及raw原文核验；不把空白工具结果当作有效证据。同tag的How_to_set_AT_port_pin.rst已实际读取并确认两组AT GPIO及无流控参数；ROM启动与备份命令还需由官方原文及本地工具核验。
+- 已查到官方esptool v5.1.0 Windows独立包及GitHub提供的SHA256：f68a8f7728adfc59cd60f9424928199e76eac66372c7bdc23898aa32753a437a。选择固定版本而非猜测最新版。
+- 资料ZIP用默认UTF8显示中文乱码，改用ZipFile.Open的CP936解码后定位规格手册和原理图，不修改原ZIP。
+- 两官方ZIP已下载到Git忽略的tmp/esp-upgrade；esptool包SHA256与GitHub发布digest完全一致。ESP-AT包SHA256为CB57E8AFD4CCCCAE8204790ACC41322E6DDBBFD813AFBD1192D828F686F7542B（本地记录，不冒充发布者签名/独立校验）。
+- 模块规格手册实际读取：6针接口1=VDD、2=GND、3=TXD(GPIO1)、4=RXD(GPIO3)、5=RST、6=IO(GPIO0)。IO默认上拉，拉低进入下载。板带LDO、VDD输入为3.3V或5V；裸芯片VCC及所有IO仍是3.3V域，不能混淆。
+- 发布包含flasher_args.json/download.config/sdkconfig、独立factory_param.bin及2MB合并factory_WROOM-02.bin；尚未选择烧写布局，先核对官方参数工具及实际模块Flash。
+- 官方包sdkconfig实际确认CONFIG_AT_MQTT_COMMAND_SUPPORT=y；串口8N1，默认flow_control=1需核对禁用CTS/RTS后的实际初始化。
+- 官方flasher_args.json：dio/80m/2MB，factory_param位于0xF1000；这是固件使用布局，不是实际芯片容量。即使实际4MB也不能直接把分区地址随容量改写。
+- 独立esptool.exe成功执行version，输出5.1.0；未对任何串口运行chip-id/flash-id/read-flash/write-flash。
+- 同tag官方factory_param_generate.py可独立从CSV生成4KB参数分区（依赖xlrd），无需重编译完整AT应用。先对原始CSV生成与发布bin逐字节校验，再仅更改4个UART引脚字段；保持原始发布映像不动。
+- 模块原理图文本确认板载RT9013-33GB、VDD为3.3V~5V输入、芯片VCC为3V3；不能将板VDD的5V容许范围扩展到TX/RX/IO/RST。正在视觉核对GPIO0/15拉阻及接口编号。
+- 已渲染并视觉核对模块原理图：J1-6为GPIO0，板上R3=1K上拉3V3；GPIO15由R4=1K下拉，RST/EN由R5/R6上拉；GPIO13/15未引到J1。刷写只需控制J1-6和RST，不要求用户焊接未引出的GPIO。
+- 同tag官方参数CSV的WROOM-02默认15/13/3/1；已有WROOM-02-N行使用1/3/-1/-1，可佐证官方支持原UART方案。计划保留发布WROOM-02的其它字段，只改变TX/RX/CTS/RTS，不冒充实物型号为WROOM-02。
+- 使用官方factory_param_generate.py及CSV生成原参数成功，断言与发布factory_param.bin全部4096字节完全相同，原TX/RX/CTS/RTS为15/13/3/1；仅在tmp内安装xlrd2.0.1供官方工具导入，不改全局Python。
+- 已生成factory_param-rx3-tx1.bin并断言长度4096B、差异仅偏移16/17/18/19、TX/RX/CTS/RTS=1/3/-1/-1、波特率115200，其它字节不变。SHA256=87125B9C7BE7303D3299F5662303B6BAD93C3A59D238472A7D57C2BF391AB220。仅为电脑准备，不代表已烧录/启动。
+- 用户最新约束：只能通过开发板给扩展板供电。保留原电源链，不需要独立3.3V电源；供电独立与串口直连是两件事。
+- 为复用现有硬件，已实际读取并渲染双USB核心板原理图第5/6页：板载CH340X的VCC/V3接3V3；J5-7=PA9、J5-8=CH340 RXD，J5-9=PA10、J5-10=CH340 TXD。拔除7-8、9-10串口跳帽可物理隔离STM32，CH340侧可直接接ESP TXD/RXD，不需新增USB-TTL或修改STM32固件。
+- 借用CH340时仍必须断开ESP与PB10/PB11/PB9/其它IO0驱动的信号连接；VDD/GND保留原开发板供电。只拔串口两跳帽，不改BOOT0/BOOT1跳帽。实物J5方向/丝印未确认，不能按照片缺失的左右方位猜引脚。
+- 官方资料来源：espressif/esp-at v2.2.1.0_esp8266 release、Espressif Released Firmware、Hardware Connection与esptool Basic Commands/Boot Mode Selection。实际Flash容量尚未读取。
+
+## 2026-10-13 M6逻辑与RAM优化
+- 已恢复既有Phase16及脏工作区；基线map为Flash55500B/RAM20176B，RAM剩304B。
+- map确认storage.recent与storage.refresh各640B，菜单manual_labels/root_labels分别60B/32B在RW区；优先消除重复缓存并将只读指针表移至RO。
+- 存储快照受view_lock保护；不能直接把Flash读取改为在该锁内进行，也不能读取失败后留下半更新列表。需要核对eventlog提交/尾部擦除和调用者后再选最小方案。
+- 最近事件仅在storage_start（LogTask启动）重建；recent_count为0期间读者不会触碰尚未发布的数组。运行时可复用log_read_last(1)的CRC有效记录，在短RAM锁内更新，不增加公开API，也不改变Flash记录格式。
+- 已移除640B的refresh数组；正常事件路径由两次提交所需读取加至多20次历史读取，改为两次提交读取加一次最新记录读取。首次2100条模型逐字节对比通过，正在补失败与启动并发可见性检查。
+- 首次普通Keil构建0错误0警告，Flash55560B/RAM19448B，RAM净省728B（640B缓冲+92B标签表-4B对齐），Flash增60B。运行堆区11264B及任务栈不变，不能将静态节省宣称为堆余量增长。
+- 稀疏介质可在轮换时擦掉最近缓存的尾部记录；回归已复现。新增eventlog_count只暴露既有available，不分配RAM、不碰存储布局，用其限制缓存数。
+- 最终普通构建Flash55588B/RAM19448B，净+88B/-728B，RAM余1032B；新增计数边界后比首次构建再增28B。map验证一个640B缓存、标签RO、11264B heap不变；正式压测宏0，归档HEX与Keil输出SHA256一致。
+- 当前SerialPort仅COM1/COM2且Pnp无FireDAP/CH340匹配，故未下载/采集；9组主机测试及独立存储2304事件/500KV压力模型通过，不代表4小时或真实无线DoD通过。
+
+## 2026-10-13 修正接线后复测
+- `Docs/M6-rewire-20261013-115729.log`：COM6实采45秒，收到AT/OK及完整GMR：AT1.7.4.0、SDK3.0.5、Bin1.7.4。运行时RST/RX=1，DMA观测字节从3836增至4389，上一轮全程RST低/零字节故障不再成立。
+- AT/GMR仍有超时及USART3错误0x06；尚无网络在线/IP/RSSI。需分别核对接收错误、启动时序和旧AT固件MQTT能力，不将AT应答当作M6通过。
+- DHT采集90/90、超声失败0、堆824B、看门狗故障0；只是短时现场结果。
+- MQTTX启动后既有f103连接断开，独立订阅保留、无设备消息。首次连接点击被工具报告用户输入干预，须刷新再决定。
+- 已以真实MQTT配置命令替换仅测试`=?`的能力探测；实际C回归先RED后GREEN，并验证配置拒绝3次后复位而非ONLINE。UART模型通过，Keil0错误0警告，Flash55500B/RAM20176B。
+- 12:16:51 FireDAP下载/校验/运行成功。`M6-mqtt-probe-20261013-121640.log`新启动KV5、存储就绪944ms；5轮各3次MQTT配置均ERROR，共15次，无IP/RSSI/ONLINE，尚未进入CWJAP。
+- 当前1.7.4固件不接受本工程内置MQTT配置命令，选择兼容ESP-AT升级路径；静态RAM仅余304B，不直接加STM32端lwMQTT。ESP本轮未刷写。
+- 资料ZIP的559B说明文件是UTF8（首次GBK读取乱码，重读UTF8成功），说明小智12F为4MB；附带旧AT1.5.4.1和1471 MQTT透传固件，不能将其当作已核验ESP-AT2.2.1.0镜像。刷写前须实际核对容量及运行AT UART映射。
+- 新启动短时DHT21/21、超声失败0、堆824B/看门狗故障0；下载前旧运行段DHT552/612存在无响应54/拉低超时6，保留为长期风险，不忽略。
+- MQTTX后续快照显示已连接、仍只有旧消息；末次读取因窗口被最小化未获得新快照。没有设备端遥测证据，也未发送执行器命令。
+
+## 2026-10-13 MQTTX现场配置
+- 当前存在USB-SERIAL CH340(COM5)和FireDAP CMSIS-DAP(USB VID0416/PID5021)。此前只按FriendlyName筛选漏掉FireDAP；SWD实际下载仍待验证。
+- 注册表确认已安装MQTTX 1.13.1，路径D:/Program Files/MQTTX/MQTTX.exe。
+- 当前电脑Wi-Fi是OPPO A5，5GHz/channel44；待核对模块频段及可用2.4GHz网络。
+- 固件当前默认SSID为空，NetTask在config_ready检查失败时不会进入AT流程；storage_get_network_text提供读取但没有网络字符串写入入口。不能只改编译默认值并假设seq3的旧KV会自动迁移。
+- MQTTX已连接broker.emqx.io:1883，电脑Client ID=mqttx-pc-m6-20261013；smshub/sms-hub/#订阅生效。独立非retained回显在11:10:17.546发送、11:10:17.749收到，电脑端实测通过。
+- 12秒COM5现场采样：堆824B、看门狗故障0、任务栈余量52~70%。DHT当前GOOD，但累计163/173成功（起始拉低超时1、无响应9）；超声GOOD/37cm/失败0。无设备上线证据。
+- 用户已提供本地热点参数并切换2.4GHz；netsh实查OPPO A5/2.4GHz/频道11/WPA2。密码仅保存于已被Git忽略的App/app_secrets.h。
+- 新增受本地编译开关控制的网络配置提交：仅更新网络字段，保留阈值/模式/日志，同值重启不重复写KV；设备主题使用smshub/sms-hub-8e7c4b91。
+- 网络配置保留/重启幂等/提交失败回退的实际C主机回归通过，M6模型通过；构建0错误0警告，Flash55172B/RAM20176B，较配置前+396B/0B。
+- FireDAP实际Erase/Programming/Verify OK/Application running成功；串口确认旧KV序号4->5，事件下一序号31，存储就绪，擦除0。ESP未上线，约每9秒出现一次USART3帧错误0x04，需核对启动输出和AT链路。
+- 实板AT状态2连续超时，未进入CWJAP。临时74880未获得启动文本，已恢复115200。最终GPIO证据CRH=0x88264B22、ODR=0xC311、IDR=0x45D0：PB9为推挽输出且ODR高，但IDR低；5秒汇总仍RST=0/RX=0/观测字节0。需断电排查外部拉低/线序/模块，不能仅凭代码指定具体损坏位置。
+- MQTTX已增加本机独立订阅smshub/sms-hub-8e7c4b91/#，未收到设备消息、未下发执行器命令。最终构建Flash55504B/RAM20176B、0错误0警告，KV仍序号5，短时堆824B/看门狗故障0。
+
+## 2026-10-12 M6无线通信取证
+- 当前工程已预留USART3 DMA1 CH3循环接收/CH2发送、PB10/PB11串口、PB9复位；`bsp_bus.c`仅完成行缓冲与回环发送，没有AT状态机或MQTT层。
+- 野火ESP8266-12F资料默认115200，12F的IO0应保持3V3运行态；PB8在ESP-01例程中是CH_PD，不能当作12F的IO0控制脚。M6只对PB9执行低100ms再拉高复位。
+- 例程出现`AT+MQTTUSERCFG/MQTTCONN/MQTTSUB/MQTTPUB`，但没有当前模块`AT+GMR`回显；版本、MQTT能力、IP/RSSI和LWT仍需上电实测，不能从资料宣称支持ESP-AT v2.2.1.0。
+- M5普通构建Flash约56812B、RAM约19648B，剩余约4628B/832B；不新增任务/队列，采用固定RAM环形缓存和现有NetTask。
+- 配置由LogTask私有持有；网络层需要受锁快照API。`storage_set()`异步入队，MQTT命令响应必须表达queued/rejected，不能在入队时宣称Flash已提交。
+
+## 2026-10-13 M6实板验收边界
+
+- 用户最新日志确认本地基线正常：JEDEC=0xEF4017、SPI=9MHz、KV序号3、事件日志下一序号27、存储就绪942ms，DHT连续成功、超声失败0、看门狗故障0，堆保持824B，任务栈余量均高于30%。
+- 日志唯一网络异常为“串口3汇总：超时=1 错误=0 码=0x00 重启失败=0”；这不是HardFault，但验收时必须观察是否再次累计、是否在接入ESP8266后恢复。
+- 当前日志没有AT+GMR、MQTT能力探测、WIFI CONNECTED、IP、RSSI、+MQTTCONNECTED、ONLINE、telemetry、cmd/resp、断网重连或LWT证据，因此只能判定STM32本地功能通过，不能判定M6无线DoD通过。
+
 ## 2026-10-12 Manual Test长按调查
 - 当前controls_tick按稳定高电平计时，在KEY_LONGPRESS_MS=1500ms后产生一次KEY_LONG，释放不再补CLICK；MenuTask出队后传给menu_key。
 - menu_key对KEY_WAKEUP/KEY_LONG调用navigate(-1)，MANUAL非编辑状态已有前项和首尾回绕；ADJUST模式长按应减值，须先PB15退出编辑才能切项。
@@ -188,3 +291,7 @@ DAP未检测到，尚无下载/自动运行实测；阶段不标完成，v0.1标
 - bsp_pin.h 未生成，不宣称与附件 B 一致。
 - M0 未完成，未创建阶段提交及 v0.1 标签。
 - M1 具体任务未提供，暂建议仅核心板、DAP 与 CH340 调试连接，外设清单待 M1 明确。
+
+## 2026-10-13 M6归档边界复核
+- 拟提交51个相关源码、测试、工程、文档和现场证据文件，全部通过本地密码匹配检查；凭据文件及含凭据的 HEX/AXF 不进入 Git。
+- 用户日志和截图可确认约14.3秒上线、retained online及约5秒 telemetry；完整 cmd/resp、断网/LWT 和4小时稳定性仍待实机验收，本次不发布 `v0.7`。

@@ -1,0 +1,6 @@
+Program Size: Code=50176 RO-data=5368 RW-data=44 ZI-data=19404  
+FromELF: creating hex file...
+"Objects\sms-hub.axf" - 0 Error(s), 0 Warning(s).
+Build Time Elapsed:  00:00:03
+
+Flash=55588/61440B RAM=19448/20480B

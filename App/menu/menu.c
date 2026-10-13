@@ -6,6 +6,7 @@
 #include "storage.h"
 #include "sg90.h"
 #include "tb6612_fan.h"
+#include "esp8266.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include <stdio.h>
@@ -39,7 +40,9 @@ static void header(const char *name)
 static void status(void)
 {
     /* Outlined W/M = offline placeholders. A/L/P icons show arm/alarm/warmup. */
-    ui_status(0,0,armed,0,HAL_GetTick()<APP_MQ_WARMUP_MS);
+    network_status_t net;
+    network_get_status(&net);
+    ui_status(net.wifi,net.mqtt,armed,0,HAL_GetTick()<APP_MQ_WARMUP_MS);
 }
 static void render_home(void)
 {
@@ -63,7 +66,7 @@ static void render_home(void)
     snprintf(text,sizeof(text),"UTC %02lu:%02lu:%02lu",(unsigned long)(seconds/3600u%24u),(unsigned long)(seconds/60u%60u),(unsigned long)(seconds%60u));
     oled_text(0,40,text,0);oled_text(0,56,"KEY1:NEXT PB15:OK",0);
 }
-static const char *root_labels[]={"Home","Arm","Thresholds","Manual Test","Network","Event Log","System","About"};
+static const char *const root_labels[]={"Home","Arm","Thresholds","Manual Test","Network","Event Log","System","About"};
 static void render_list(const char *title,const char *const *labels,unsigned count)
 {
     unsigned i,s=selected[current()],first=s>=APP_MENU_ROWS?s-APP_MENU_ROWS+1:0;
@@ -76,14 +79,14 @@ static void render_arm(void)
     header("ARM");oled_hanzi(0,16,armed?2:4);oled_hanzi(16,16,3);
     oled_text(0,40,armed?"ARMED":"DISARMED",0);oled_text(0,56,"PB15:TOGGLE",0);
 }
-static const char *threshold_labels[]={"Temp C","Distance cm","Smoke ms","Air ms"};
+static const char *const threshold_labels[]={"Temp C","Distance cm","Smoke ms","Air ms"};
 static void render_thresholds(void)
 {
     unsigned i;header(!store_state.ready?"STORE OFFLINE":store_state.pending?"SAVING...":editing?"EDIT KEY1:+ HOLD:-":"THRESHOLDS");
     for(i=0;i<4;i++){snprintf(text,sizeof(text),"%s:%d",threshold_labels[i],values[i]);row(i,text,i==selected[THRESHOLDS]);}
     if(editing){unsigned s=selected[THRESHOLDS];ui_progress(0,52,128,9,values[s],maxima[s]);}
 }
-static const char *manual_labels[]={"Fan %","Servo deg","Distance","Fire","Intrusion","Air","Fault","Network","Standby","Beep","RGB Red","RGB Green","RGB Blue","I2C Scan","Font test"};
+static const char *const manual_labels[]={"Fan %","Servo deg","Distance","Fire","Intrusion","Air","Fault","Network","Standby","Beep","RGB Red","RGB Green","RGB Blue","I2C Scan","Font test"};
 static int manual_fan,manual_servo;
 static unsigned font_test;
 #define MANUAL_COUNT (sizeof(manual_labels)/sizeof(manual_labels[0]))
@@ -112,7 +115,18 @@ static void render_manual(void)
     }
     render_list("MANUAL TEST",manual_labels,MANUAL_COUNT);
 }
-static void render_network(void) {header("NETWORK");oled_text(0,18,"WiFi: offline",0);oled_text(0,30,"MQTT: offline",0);oled_text(0,44,"M6 placeholder",0);}
+static void render_network(void)
+{
+    network_status_t net;
+    network_get_status(&net);
+    header("NETWORK");
+    snprintf(text,sizeof(text),"WiFi:%s RSSI:%d",net.wifi?"ON":"OFF",(int)net.rssi);
+    oled_text(0,18,text,0);
+    snprintf(text,sizeof(text),"MQTT:%s",net.mqtt?"ON":"OFF");
+    oled_text(0,30,text,0);
+    snprintf(text,sizeof(text),"IP:%s",net.ip[0]?net.ip:"-");
+    oled_text(0,42,text,0);
+}
 static void render_log(void)
 {
     event_record_t r;unsigned i,first=selected[EVENTLOG]>=APP_MENU_ROWS?selected[EVENTLOG]-APP_MENU_ROWS+1u:0;

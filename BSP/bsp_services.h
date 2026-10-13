@@ -55,8 +55,18 @@ void i2c_scan(void);
 void bsp_net_poll(void);
 /** @brief Override in App; called in NetTask, buffer valid only during callback. */
 void net_on_rx_line(const char *line, size_t length);
+/** @brief Override in App; called for binary bytes after an ESP `+IPD` header. */
+void net_on_rx_bytes(const uint8_t *data, size_t length);
+/** @brief Override in App; called when ESP enters `CIPSEND` data mode. */
+void net_on_rx_prompt(void);
 /** @brief Copy into an owned TX buffer and start DMA; return -1 if busy/invalid. */
 int bsp_net_send(const void *data, size_t length);
+/** @brief Borrow the owned DMA TX buffer for one formatted command. */
+char *bsp_net_tx_buffer(size_t *capacity);
+/** @brief Start DMA using the buffer returned by bsp_net_tx_buffer(). */
+int bsp_net_send_buffer(size_t length);
+/** @brief Reset ESP8266 with PB9 low for 100ms, then restart RX DMA. */
+int bsp_net_hard_reset(void);
 /** @brief USART3 IRQ pre-handler; acknowledges IDLE, never parses or prints. */
 void bsp_net_idle_irq(void);
 /** @brief Start IWDG / refresh after Monitor has checked all heartbeats. */

@@ -32,6 +32,7 @@ int eventlog_init(void)
     mounted=1;return 0;
 }
 uint32_t eventlog_next_seq(void){return next_sequence;}
+uint32_t eventlog_count(void){return available;}
 int log_append(uint32_t time,uint32_t type,int32_t parameter,int32_t auxiliary)
 {
     event_record_t r,check;uint32_t tries,address,marker=APP_RECORD_COMMIT;

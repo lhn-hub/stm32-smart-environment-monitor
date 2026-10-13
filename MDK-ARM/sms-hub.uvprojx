@@ -337,7 +337,7 @@
             <v6WtE>0</v6WtE>
             <v6Rtti>0</v6Rtti>
             <VariousControls>
-              <MiscControls>-Os -ffunction-sections -fdata-sections -std=c99</MiscControls>
+              <MiscControls>-Oz -ffunction-sections -fdata-sections -std=c99</MiscControls>
               <Define>USE_HAL_DRIVER,STM32F103xB</Define>
               <Undefine></Undefine>
               <IncludePath>../Inc;../Drivers/STM32F1xx_HAL_Driver/Inc;../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32F1xx/Include;../Drivers/CMSIS/Include;../BSP;../App;../App/menu;../App/tasks;../Drivers_Device/cs100a;../Drivers_Device/dht11;../Drivers_Device/ec11;../Drivers_Device/eventlog;../Drivers_Device/kvstore;../Drivers_Device/mq_gas;../Drivers_Device/oled_ssd1306;../Drivers_Device/oled_ui;../Drivers_Device/radar_at6010;../Drivers_Device/sg90;../Drivers_Device/tb6612_fan;../Drivers_Device/w25q64;../Middleware/esp8266;../Middleware/filter;../Middleware/json_mini;../Middleware/mqtt_client;../Middleware/FreeRTOS/include;../Middleware/FreeRTOS/portable/ARM_CM3;../Drivers_Device/oled_ui;../Drivers_Device;../Drivers_Device/mcu_internal;../Drivers_Device/radar_rd03</IncludePath>
@@ -656,6 +656,11 @@
               <FileName>stm32f1xx_hal_iwdg.c</FileName>
               <FileType>1</FileType>
               <FilePath>../Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_iwdg.c</FilePath>
+            </File>
+            <File>
+              <FileName>esp8266.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../Middleware/esp8266/esp8266.c</FilePath>
             </File>
           </Files>
         </Group>

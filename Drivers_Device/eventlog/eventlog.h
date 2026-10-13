@@ -14,4 +14,5 @@ int log_append(uint32_t unix_time,uint32_t type,int32_t parameter,int32_t auxili
 /** @brief LogTask only: newest first, caller supplies space for n records. */
 int log_read_last(size_t n,event_record_t *out,size_t *read_count);
 uint32_t eventlog_next_seq(void);
+uint32_t eventlog_count(void);
 #endif

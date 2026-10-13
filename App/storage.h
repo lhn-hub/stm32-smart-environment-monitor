@@ -5,6 +5,8 @@
 enum { CFG_TEMP,CFG_DISTANCE,CFG_SMOKE,CFG_AIR,CFG_MODE,CFG_FIELD_COUNT };
 enum { EVENT_BOOT=1,EVENT_CONFIG=2,EVENT_MANUAL=3,EVENT_BUS_TEST=4 };
 typedef struct {uint32_t ready,errors,dropped,erases,config_seq,pending; } storage_status_t;
+enum { STORAGE_NET_SSID, STORAGE_NET_PASSWORD, STORAGE_NET_HOST, STORAGE_NET_USER,
+       STORAGE_NET_MQTT_PASSWORD, STORAGE_NET_DEVICE };
 /** @brief Create bounded request queue/mutex; before scheduler. */
 int storage_setup(void);
 /** @brief LogTask init/pump. Sole owner of KV/eventlog/Flash. */
@@ -16,4 +18,6 @@ int storage_get_fields(int32_t values[CFG_FIELD_COUNT],storage_status_t *status)
 int storage_set(unsigned field,int32_t value);
 int storage_event(uint32_t type,int32_t parameter,int32_t auxiliary);
 int storage_recent(unsigned index,event_record_t *out,unsigned *count);
+int storage_get_network_text(unsigned field,char *out,size_t capacity);
+int storage_get_network_numbers(uint32_t *port,uint32_t *keepalive);
 #endif

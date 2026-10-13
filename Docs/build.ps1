@@ -1,4 +1,4 @@
-param([ValidateSet('M0','M1','M2','M3','M4','M5','M5-stress')][string]$Stage='M5')
+param([ValidateSet('M0','M1','M2','M3','M4','M5','M5-stress','M6')][string]$Stage='M5')
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
 if ($Stage -in @('M5','M5-stress')) {

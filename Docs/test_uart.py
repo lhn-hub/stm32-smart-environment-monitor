@@ -25,18 +25,26 @@ prefix = r'''
 #define HAL_UART_STATE_READY 0
 #define HAL_OK 0
 #define UART_IT_IDLE 0
+#define ESP_RST_PORT 0
+#define ESP_RST_PIN 0
+#define ESP_RX_PORT 0
+#define ESP_RX_PIN 0
+int HAL_GPIO_ReadPin(int port,int pin) { (void)port;(void)pin;return 1; }
 static unsigned warnings;
 #define LOGW(...) (++warnings)
 #define LOGE(...) ((void)0)
 #define taskENTER_CRITICAL() ((void)0)
 #define taskEXIT_CRITICAL() ((void)0)
 static struct { int gState; void *hdmarx; } huart3;
+static uint32_t rx_bytes;
 static uint8_t rx[ESP_RX_BUF_SIZE],discard;
 static char line[APP_NET_LINE_SIZE],received[APP_NET_LINE_SIZE];
 static size_t read_pos,line_len,write_cursor;
 static uint32_t last_poll,tx_started,uart_errors,now;
 static uint32_t uart_error_bits,gap_count,error_count,error_bits,restart_failures,last_report;
-static unsigned delivered,aborted;
+static unsigned delivered,aborted,prompt_count,byte_count;
+static unsigned char received_bytes[32];
+static uint32_t ipd_remaining;
 #define __HAL_DMA_GET_COUNTER(x) ((void)(x),sizeof(rx)-write_cursor)
 #define __HAL_UART_ENABLE_IT(x,y) ((void)(x),(void)(y))
 static uint32_t HAL_GetTick(void) { return now; }
@@ -46,11 +54,20 @@ static int HAL_UART_Receive_DMA(void *p,void *b,size_t n)
 { (void)p;(void)b;(void)n;return 0; }
 static void net_on_rx_line(const char *p,size_t n)
 { memcpy(received,p,n);received[n]=0;delivered++; }
+static void net_on_rx_bytes(const unsigned char *p,size_t n)
+{ assert(byte_count+n <= sizeof(received_bytes)); memcpy(received_bytes+byte_count,p,n);byte_count+=n; }
+static void net_on_rx_prompt(void)
+{ ++prompt_count; }
 '''
 suffix = r'''
 static void feed(const char *p)
 {
  while(*p) { rx[write_cursor]=(uint8_t)*p++;write_cursor=(write_cursor+1)%sizeof(rx); }
+ now++;bsp_net_poll();
+}
+static void feed_bytes(const unsigned char *p,size_t n)
+{
+ while(n--) { rx[write_cursor]=*p++;write_cursor=(write_cursor+1)%sizeof(rx); }
  now++;bsp_net_poll();
 }
 int main(void)
@@ -63,6 +80,11 @@ int main(void)
  i=delivered;feed("\n");assert(delivered==i);feed("ok\n");assert(!strcmp(received,"ok"));
  now+=APP_NET_RING_GUARD_MS+1;bsp_net_poll();i=delivered;
  feed("bad\n");assert(delivered==i);feed("good\n");assert(!strcmp(received,"good"));
+ feed("+IPD,4:");
+ { static const unsigned char binary[] = {0x20,0x02,0x00,0x00};
+   feed_bytes(binary,sizeof(binary)); }
+ assert(byte_count==4 && received_bytes[0]==0x20 && received_bytes[3]==0x00);
+ feed(">\r\n");assert(prompt_count==1);
  huart3.gState=1;tx_started=now;now+=APP_NET_TX_TIMEOUT_MS;bsp_net_poll();assert(aborted==1);
  /* Sustained hardware errors recover every poll, but report at most per5s. */
  warnings=0;last_report=now;gap_count=error_count=error_bits=restart_failures=0;

@@ -4,6 +4,7 @@
 #include "bsp_services.h"
 #include "datahub.h"
 #include "m5_bench.h"
+#include "esp8266.h"
 #include "FreeRTOS.h"
 #include "queue.h"
 #include "semphr.h"
@@ -12,7 +13,7 @@ typedef struct {uint32_t kind,time;int32_t first,second;} request_t;
 static QueueHandle_t requests;
 static SemaphoreHandle_t view_lock;
 static config_t current_config; /* Sole writer LogTask; never on a256-word task stack. */
-static event_record_t recent[APP_STORAGE_RECENT],refresh[APP_STORAGE_RECENT];
+static event_record_t recent[APP_STORAGE_RECENT];
 static unsigned recent_count;
 static int32_t fields[CFG_FIELD_COUNT];
 static storage_status_t state;
@@ -32,11 +33,23 @@ static void publish_fields(void)
 }
 static void offline(void)
 {take_view();state.ready=0;++state.errors;state.pending=0;state.erases=w25q_erases();xSemaphoreGive(view_lock);LOGE("存储故障：保留已确认配置，停止写入，请复位后重扫");}
-static int refresh_recent(void)
+static int load_recent(void)
 {
     size_t n;
-    if(log_read_last(APP_STORAGE_RECENT,refresh,&n))return -1;
-    take_view();memcpy(recent,refresh,n*sizeof(*recent));recent_count=(unsigned)n;state.erases=w25q_erases();xSemaphoreGive(view_lock);
+    /* Startup keeps recent_count zero until the complete scan is published. */
+    if(log_read_last(APP_STORAGE_RECENT,recent,&n))return -1;
+    take_view();recent_count=(unsigned)n;state.erases=w25q_erases();xSemaphoreGive(view_lock);
+    return 0;
+}
+static int append_recent(uint32_t time,uint32_t type,int32_t parameter,int32_t auxiliary)
+{
+    event_record_t record;size_t n;
+    if(log_append(time,type,parameter,auxiliary) || log_read_last(1,&record,&n) || n!=1u)return -1;
+    take_view();
+    if(recent_count<APP_STORAGE_RECENT)++recent_count;
+    if(recent_count>eventlog_count())recent_count=(unsigned)eventlog_count();
+    memmove(recent+1,recent,(recent_count-1u)*sizeof(*recent));recent[0]=record;
+    state.erases=w25q_erases();xSemaphoreGive(view_lock);
     return 0;
 }
 int storage_setup(void)
@@ -47,6 +60,7 @@ int storage_setup(void)
 }
 void storage_start(void)
 {
+    take_view();state.ready=0;recent_count=0;xSemaphoreGive(view_lock);
     LOGI("存储初始化：开始SPI/JEDEC");
     if(w25q_init()){LOGE("Flash JEDEC阶段失败：读到=0x%06lX 期望=0x%06lX",(unsigned long)w25q_id(),(unsigned long)W25Q_JEDEC_ID);offline();return;}
     LOGI("Flash JEDEC=0x%06lX SPI=9MHz",(unsigned long)w25q_id());
@@ -55,6 +69,20 @@ void storage_start(void)
         LOGI("存储初始化：KV扫描结果=%d 序号=%lu",(long)result,(unsigned long)current_config.seq);
         if(result<0){LOGE("KV扫描/默认配置写入失败");offline();return;}
     }
+#if APP_NETWORK_PROVISION
+    /* Explicit local provisioning preserves all non-network KV fields. */
+    if(strcmp(current_config.ssid,APP_WIFI_SSID) || strcmp(current_config.wifi_password,APP_WIFI_PASSWORD) ||
+       strcmp(current_config.mqtt_host,APP_MQTT_HOST) || strcmp(current_config.mqtt_user,APP_MQTT_USER) ||
+       strcmp(current_config.mqtt_password,APP_MQTT_PASSWORD) || strcmp(current_config.device,APP_DEVICE_DEFAULT) ||
+       current_config.mqtt_port!=APP_MQTT_PORT || current_config.mqtt_keepalive!=APP_MQTT_KEEPALIVE){
+        strcpy(current_config.ssid,APP_WIFI_SSID);strcpy(current_config.wifi_password,APP_WIFI_PASSWORD);
+        strcpy(current_config.mqtt_host,APP_MQTT_HOST);strcpy(current_config.mqtt_user,APP_MQTT_USER);
+        strcpy(current_config.mqtt_password,APP_MQTT_PASSWORD);strcpy(current_config.device,APP_DEVICE_DEFAULT);
+        current_config.mqtt_port=APP_MQTT_PORT;current_config.mqtt_keepalive=APP_MQTT_KEEPALIVE;
+        if(kv_save(&current_config)){LOGE("网络配置提交失败");offline();return;}
+        LOGI("网络配置已保存 序号=%lu 设备=%s",(unsigned long)current_config.seq,current_config.device);
+    }
+#endif
     {
         int result=eventlog_init();
         LOGI("存储初始化：事件日志扫描结果=%d 下一序号=%lu",(long)result,(unsigned long)eventlog_next_seq());
@@ -63,7 +91,7 @@ void storage_start(void)
     if(datahub_set_gas_limits(current_config.smoke_ms,current_config.air_ms)){LOGE("存储初始化：阈值热加载失败");offline();return;}
     publish_fields();
     if(log_append(rtc_get(),EVENT_BOOT,0,0)){LOGE("存储初始化：启动事件写入失败");offline();return;}
-    if(refresh_recent()){LOGE("存储初始化：最近事件读取失败");offline();return;}
+    if(load_recent()){LOGE("存储初始化：最近事件读取失败");offline();return;}
     take_view();state.ready=1;xSemaphoreGive(view_lock);
     LOGI("存储就绪 KV序号=%lu 最近事件=%u 擦除=%lu",(unsigned long)current_config.seq,recent_count,(unsigned long)w25q_erases());
 }
@@ -97,6 +125,32 @@ int storage_recent(unsigned index,event_record_t *r,unsigned *count)
     if(!view_lock || !r || !count || xSemaphoreTake(view_lock,pdMS_TO_TICKS(APP_STORAGE_LOCK_MS))!=pdTRUE)return -1;
     *count=recent_count;if(index<recent_count){*r=recent[index];result=0;}xSemaphoreGive(view_lock);return result;
 }
+int storage_get_network_text(unsigned field,char *out,size_t capacity)
+{
+    const char *src=NULL;
+    if(!out || capacity<2u || !view_lock ||
+       xSemaphoreTake(view_lock,pdMS_TO_TICKS(APP_STORAGE_LOCK_MS))!=pdTRUE)return -1;
+    if(!state.ready){xSemaphoreGive(view_lock);return -1;}
+    switch(field){
+    case STORAGE_NET_SSID:src=current_config.ssid;break;
+    case STORAGE_NET_PASSWORD:src=current_config.wifi_password;break;
+    case STORAGE_NET_HOST:src=current_config.mqtt_host;break;
+    case STORAGE_NET_USER:src=current_config.mqtt_user;break;
+    case STORAGE_NET_MQTT_PASSWORD:src=current_config.mqtt_password;break;
+    case STORAGE_NET_DEVICE:src=current_config.device;break;
+    default:xSemaphoreGive(view_lock);return -1;
+    }
+    if(strlen(src)>=capacity){xSemaphoreGive(view_lock);return -1;}
+    strcpy(out,src);xSemaphoreGive(view_lock);return 0;
+}
+int storage_get_network_numbers(uint32_t *port,uint32_t *keepalive)
+{
+    if(!port || !keepalive || !view_lock ||
+       xSemaphoreTake(view_lock,pdMS_TO_TICKS(APP_STORAGE_LOCK_MS))!=pdTRUE)return -1;
+    if(!state.ready){xSemaphoreGive(view_lock);return -1;}
+    *port=current_config.mqtt_port;*keepalive=current_config.mqtt_keepalive;
+    xSemaphoreGive(view_lock);return 0;
+}
 void storage_poll(void)
 {
     request_t r;int ready;
@@ -118,8 +172,8 @@ void storage_poll(void)
             current_config.temp_x10=bench_left==1?bench_saved_temp:(int32_t)(bench_left%APP_EDIT_MAX_TEMP)*10;
             if(kv_save(&current_config)){offline();bench_left=0;goto done;}
             publish_fields();
-        }else if(log_append(rtc_get(),EVENT_MANUAL,(int32_t)bench_left,0)){offline();bench_left=0;goto done;}
-        if(--bench_left==0){if(refresh_recent())offline();LOGI("存储压力测试结束 模式=%lu",(unsigned long)bench_mode);}
+        }else if(append_recent(rtc_get(),EVENT_MANUAL,(int32_t)bench_left,0)){offline();bench_left=0;goto done;}
+        if(--bench_left==0)LOGI("存储压力测试结束 模式=%lu",(unsigned long)bench_mode);
         goto done;
     }
 #endif
@@ -138,7 +192,8 @@ void storage_poll(void)
         take_view();state.pending=0;xSemaphoreGive(view_lock);
         r.kind=EVENT_CONFIG;
     }
-    if(log_append(r.time,r.kind,r.first,r.second)||refresh_recent())offline();
+    if(append_recent(r.time,r.kind,r.first,r.second))offline();
+    else network_event_enqueue(r.kind,r.first,r.second,r.time);
 done:
     spi_bus_give();
 }
