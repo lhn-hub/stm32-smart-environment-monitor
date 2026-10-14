@@ -4,14 +4,18 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>SMS Hub · 环境与报警</title>
 <style>
-:root{font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif;color:#1d302c;background:#f3f6f5;color-scheme:light;--green:#11745c;--line:#dce4e1;--muted:#546962;--red:#a42642;--blue:#236a9e;--orange:#ac4c23}
-*{box-sizing:border-box;letter-spacing:0}body{margin:0}button,input{font:inherit}button,input[type=text],input[type=number]{min-height:42px;border:1px solid #a8b9b2;border-radius:5px;background:white;color:inherit;padding:8px 12px}button{cursor:pointer;font-weight:600}button:hover{border-color:var(--green);background:#eef7f3}button:disabled{opacity:.5;cursor:default}button.primary{background:var(--green);color:white;border-color:var(--green)}button:focus-visible,input:focus-visible{outline:3px solid #e49b32;outline-offset:3px}input[type=range]{width:100%;accent-color:var(--green);min-height:36px}
-header{background:white;border-bottom:1px solid var(--line)}.wrap{max-width:1240px;margin:auto;padding:20px 28px}.top{display:flex;gap:20px;align-items:center;justify-content:space-between;flex-wrap:wrap}h1{font-size:22px;margin:0;font-weight:700}h1 small{display:block;font-size:12px;color:var(--muted);font-weight:400;margin-top:5px}form{display:flex;gap:8px;align-items:center;flex-wrap:wrap}form label{font-size:13px}#dev{width:230px;max-width:100%}.connection{font-size:13px;color:var(--muted);display:flex;gap:18px;flex-wrap:wrap;margin-top:16px}.dot{width:8px;height:8px;display:inline-block;border-radius:50%;background:#85958e;margin-right:7px}.dot.online{background:var(--green)}.dot.error{background:var(--red)}
-.alarm-strip{display:flex;justify-content:space-between;gap:16px;align-items:center;border-left:4px solid var(--green);padding:14px 18px;background:#e8f3ee;margin:4px 0 20px}.alarm-strip[data-tone=error]{border-color:var(--red);background:#fbeef1}.alarm-strip strong{font-size:17px}.alarm-strip p{font-size:13px;margin:5px 0 0;color:var(--muted)}.mono{font-family:Consolas,"SFMono-Regular",monospace;font-variant-numeric:tabular-nums}.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.metric{padding:16px 18px;background:white;border:1px solid var(--line);border-radius:6px;min-height:120px;min-width:0}.metric .label{font-size:13px;color:var(--muted)}.metric .value{font-family:Consolas,"SFMono-Regular",monospace;font-size:28px;line-height:1.4;margin-top:9px;overflow-wrap:anywhere}.metric .value.text{font-family:inherit;font-size:21px}.metric small{font-size:12px;color:var(--muted)}.metric[data-bad=true]{border-left:3px solid var(--red)}
+ :root{font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif;color:#27333b;background:#f3f5f7;color-scheme:light;--green:#0e715d;--ink:#27333b;--line:#dde3e7;--muted:#5c6a74;--red:#a32643;--blue:#2f6e9f;--orange:#b55b2b;--shadow:none}
+*{box-sizing:border-box;letter-spacing:0}body{margin:0;background:linear-gradient(180deg,#f8fbfa 0,#eef4f1 42%,#eef4f1 100%)}button,input,select{font:inherit}button,input[type=text],input[type=password],input[type=number],select{min-height:42px;border:1px solid #aac0b8;border-radius:7px;background:white;color:inherit;padding:8px 12px}button{cursor:pointer;font-weight:650;transition:transform .15s ease,background .15s ease,border-color .15s ease}button:hover{border-color:var(--green);background:#eef8f4;transform:translateY(-1px)}button:disabled{opacity:.5;cursor:default;transform:none}button.primary{background:var(--green);color:white;border-color:var(--green)}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #e49b32;outline-offset:3px}input[type=range]{width:100%;accent-color:var(--green);min-height:36px}
+header{background:rgba(255,255,255,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}.wrap{max-width:1240px;margin:auto;padding:20px 28px}.top{display:flex;gap:20px;align-items:center;justify-content:space-between;flex-wrap:wrap}h1{font-size:24px;margin:0;font-weight:800;letter-spacing:-.3px;color:var(--ink)}h1 small{display:block;font-size:12px;color:var(--muted);font-weight:500;margin-top:5px;letter-spacing:.4px}form{display:flex;gap:8px;align-items:center;flex-wrap:wrap}form label{font-size:13px}#dev{width:230px;max-width:100%}.connection{font-size:13px;color:var(--muted);display:flex;gap:18px;flex-wrap:wrap;margin-top:16px}.dot{width:8px;height:8px;display:inline-block;border-radius:50%;background:#85958e;margin-right:7px}.dot.online{background:var(--green)}.dot.error{background:var(--red)}
+.alarm-strip{display:flex;justify-content:space-between;gap:16px;align-items:center;border-left:4px solid var(--green);padding:15px 18px;background:#e7f3ee;margin:4px 0 20px;border-radius:0 8px 8px 0;box-shadow:var(--shadow)}.alarm-strip[data-tone=error]{border-color:var(--red);background:#fbeef1}.alarm-strip strong{font-size:17px}.alarm-strip p{font-size:13px;margin:5px 0 0;color:var(--muted)}.mono{font-family:Consolas,"SFMono-Regular",monospace;font-variant-numeric:tabular-nums}.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.metric{padding:17px 18px;background:rgba(255,255,255,.95);border:1px solid var(--line);border-radius:9px;min-height:120px;min-width:0;box-shadow:0 5px 16px rgba(20,63,52,.035)}.metric .label{font-size:13px;color:var(--muted)}.metric .value{font-family:Consolas,"SFMono-Regular",monospace;font-size:28px;line-height:1.4;margin-top:9px;overflow-wrap:anywhere}.metric .value.text{font-family:inherit;font-size:21px}.metric small{font-size:12px;color:var(--muted)}.metric[data-bad=true]{border-left:3px solid var(--red)}
 section{border-top:1px solid var(--line);margin-top:24px;padding-top:20px}h2{font-size:16px;margin:0 0 14px}.graphs{display:grid;grid-template-columns:1fr 1fr;gap:28px}.graph-title{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.legend{font-size:12px;display:flex;gap:14px}.legend span:before{content:"";display:inline-block;width:14px;height:3px;margin:0 5px 3px 0;background:var(--orange)}.legend .hum:before{background:var(--green)}.legend .dist:before{background:var(--blue)}.canvas-wrap{height:220px;width:100%}canvas{width:100%;height:100%;display:block}
-.controls{display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px}.control label{display:flex;align-items:center;justify-content:space-between;font-size:14px}.control footer{display:flex;gap:8px;align-items:center;margin-top:8px}.control footer button{flex:1}.control input[type=number]{width:110px}.toolbar{display:flex;gap:8px;flex-wrap:wrap}#control-note{font-size:13px;color:var(--muted);margin:0 0 16px}#response{min-height:22px;font-size:13px;margin-top:14px;color:var(--green)}#response.error{color:var(--red)}
+.controls{display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px}.control label{display:flex;align-items:center;justify-content:space-between;font-size:14px}.control footer{display:flex;gap:8px;align-items:center;margin-top:8px}.control footer button{flex:1}.control input[type=number]{width:110px}.toolbar{display:flex;gap:8px;flex-wrap:wrap}#control-note{font-size:13px;color:var(--muted);margin:0 0 16px}#response,#wifi-response{min-height:22px;font-size:13px;margin-top:14px;color:var(--green)}#response.error,#wifi-response.error{color:var(--red)}
+.wifi-panel{display:grid;grid-template-columns:1.1fr 1fr;gap:18px;align-items:start}.wifi-copy{color:var(--muted);font-size:13px;line-height:1.65;margin:0}.wifi-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.wifi-actions button{flex:1;min-width:130px}.wifi-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.wifi-fields label{display:grid;gap:6px;font-size:13px;color:var(--muted)}.wifi-fields label:first-child{grid-column:1/-1}.wifi-fields input,.wifi-fields select{width:100%}.wifi-state{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}.wifi-state strong{color:var(--ink)}#wifi-availability{font-size:12px;color:var(--muted);margin-top:10px}
 .log-head{display:flex;justify-content:space-between;align-items:center}table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px}th{text-align:left;color:var(--muted);font-weight:400}th,td{padding:10px 8px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}th:first-child{width:105px}th:nth-child(2){width:95px}#empty{color:var(--muted);font-size:13px;padding:14px 8px}body>footer{font-size:12px;color:var(--muted);border-top:1px solid var(--line);margin-top:14px}#error{color:var(--red);font-size:13px;min-height:20px;margin:10px 0 0}
+body{background:#f3f5f7}h1,h1 small{letter-spacing:0}h1{font-family:"Bahnschrift","Microsoft YaHei",sans-serif}.metric{border-radius:8px;box-shadow:none}.controls{grid-template-columns:1fr 1fr}.wifi-panel{gap:28px}.wifi-fields{min-width:0}.wifi-fields input,.wifi-fields select{min-width:0}#wifi-response{overflow-wrap:anywhere}.alarm-strip{box-shadow:none}.wifi-copy{padding:10px 0}.wifi-actions button{min-width:0}.wifi-fields label.password{grid-column:1/-1}#password-show{min-height:auto;accent-color:var(--green);margin:0 6px 0 0}.password-visibility{display:flex;align-items:center;font-size:12px;color:var(--muted)}button{display:inline-flex;align-items:center;justify-content:center;gap:7px}button svg{width:16px;height:16px;flex-shrink:0}
 @media(max-width:760px){.wrap{padding:18px 16px}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.graphs{grid-template-columns:1fr;gap:22px}.controls{grid-template-columns:1fr;gap:20px}form{width:100%}form label{width:100%}#dev{flex:1;min-width:120px}.alarm-strip{align-items:flex-start}.metric{padding:14px;min-height:115px}.connection{gap:10px}.canvas-wrap{height:200px}.toolbar button{flex:1}.alarm-strip strong{font-size:16px}}
+@media(max-width:760px){.wifi-panel{grid-template-columns:1fr;gap:16px}.wifi-fields{grid-template-columns:1fr}.wifi-copy{padding:0}.wifi-fields button{width:100%}}
+@media(prefers-reduced-motion:reduce){button{transition:none}button:hover{transform:none}}
 </style>
 <header>
   <div class="wrap">
@@ -54,13 +58,19 @@ section{border-top:1px solid var(--line);margin-top:24px;padding-top:20px}h2{fon
       <div><div class="graph-title"><h2>距离 · 最近 5 分钟</h2><div class="legend"><span class="dist">cm</span></div></div><div class="canvas-wrap"><canvas id="range" role="img" aria-label="距离滚动趋势"></canvas></div></div>
     </div>
   </section>
+  <section aria-labelledby="wifi-title">
+    <div class="graph-title"><h2 id="wifi-title">WiFi 配置</h2><div class="wifi-state"><i class="dot" id="serial-dot"></i><strong id="serial-state">未连接 USB 串口</strong></div></div>
+    <div class="wifi-panel">
+      <div><p class="wifi-copy">USB 本地配网 · 2.4 GHz</p><div class="wifi-actions"><button id="serial-connect" class="primary">连接开发板</button><button id="serial-disconnect" disabled>断开串口</button><button id="wifi-scan" disabled>扫描热点</button></div><div id="wifi-availability">当前浏览器尚未授权串口。</div></div>
+      <div class="wifi-fields"><label for="wifi-list">热点<select id="wifi-list" disabled><option value="">尚未扫描</option></select></label><label class="password" for="wifi-password">密码<input id="wifi-password" type="password" maxlength="64" autocomplete="off" disabled></label><label class="password-visibility"><input id="password-show" type="checkbox">显示密码</label><button id="wifi-join" class="primary" disabled>连接并保存</button></div>
+    </div><p id="wifi-response" role="status" aria-live="polite"></p>
+  </section>
   <section aria-labelledby="controls-title">
     <div class="graph-title"><h2 id="controls-title">设备控制</h2><div class="toolbar"><button id="arm-on" disabled>布防</button><button id="arm-off" disabled>撤防</button></div></div>
     <p id="control-note">等待在线设备与有效数据</p>
     <div class="controls">
       <div class="control"><label for="fan">风扇 <output id="fan-value" for="fan">0%</output></label><input type="range" id="fan" min="0" max="100" value="0" disabled><footer><button id="fan-send" disabled>设置风扇</button><button id="fan-stop" disabled>停止</button></footer></div>
       <div class="control"><label for="servo">舵机 <output id="servo-value" for="servo">0°</output></label><input type="range" id="servo" min="0" max="180" value="0" disabled><footer><button id="servo-send" disabled>设置角度</button><button id="servo-zero" disabled>回零</button></footer></div>
-      <div class="control"><label for="buzzer">蜂鸣时长 <span>ms</span></label><footer><input type="number" id="buzzer" value="300" min="1" max="10000" step="100" disabled><button id="buzzer-send" disabled>蜂鸣</button></footer></div>
     </div>
     <div id="response" role="status" aria-live="polite"></div>
   </section>
@@ -77,6 +87,8 @@ const $=id=>document.getElementById(id);
 const stateNames=['自检','故障','已撤防','预热中','已布防','报警'];
 const alarmNames=['无报警','空气提示','入侵报警','火灾报警'];
 let client=null,generation=0,root='',deviceOnline=false,lastReceived=0,data=null,pending=null,config=null;
+let serialPort=null,serialWriter=null,serialReader=null,serialReadTask=null,serialClosing=false,serialOpening=false;
+let serialBuffer='',wifiNetworks=[],wifiOperation=null,wifiTimer=0;
 const points=[]; const maxAge=8000;
 const integer=(v,min,max)=>Number.isInteger(v)&&v>=min&&v<=max;
 const text=(id,value)=>{$(id).textContent=value;};
@@ -90,6 +102,125 @@ function eventRow(kind,value){
   $('empty').hidden=true;
 }
 function reply(message,error=false){text('response',message);$('response').classList.toggle('error',error);}
+function wifiReply(message,error=false){text('wifi-response',message);$('wifi-response').classList.toggle('error',error);}
+function setSerialState(message,kind=''){
+  text('serial-state',message);$('serial-dot').className='dot '+kind;
+  const supported='serial' in navigator;
+  text('wifi-availability',supported?'密码仅经 USB 传输，不上传到 MQTT。':'当前浏览器不支持 USB 配网，请使用桌面版 Chrome/Edge。');
+}
+function wifiControls(){
+  const connected=Boolean(serialWriter),busy=Boolean(wifiOperation);
+  $('serial-connect').disabled=connected||serialOpening||serialClosing;
+  $('serial-disconnect').disabled=!connected||serialClosing;
+  $('wifi-scan').disabled=!connected||busy;
+  $('wifi-list').disabled=!connected||busy||!wifiNetworks.length;
+  const network=wifiNetworks.find(n=>n.ssid===$('wifi-list').value);
+  $('wifi-password').disabled=!connected||busy||!network||network.open;
+  $('wifi-join').disabled=!connected||busy||!network;
+}
+function wifiFinish(message,error=false){
+  clearTimeout(wifiTimer);wifiOperation=null;wifiReply(message,error);wifiControls();
+}
+function wifiBegin(kind){
+  wifiOperation=kind;wifiControls();clearTimeout(wifiTimer);
+  wifiTimer=setTimeout(()=>{
+    if(wifiOperation==='save'){
+      wifiReply('已连接，Flash 保存仍未确认。请停止风扇后等待回执。',true);return;
+    }
+    wifiFinish('设备回执超时，请检查串口与 ESP8266 后重试',true);
+  },120000);
+}
+function parseWifiLine(line){
+  if(!line.startsWith('@WIFI '))return;
+  if(line==='@WIFI SCAN_QUEUED'){wifiReply('正在扫描附近热点...');return;}
+  if(line==='@WIFI SCAN_END'){
+    $('wifi-list').firstChild.textContent=wifiNetworks.length?'选择热点':'未发现热点';
+    wifiFinish(wifiNetworks.length?'扫描完成 · '+wifiNetworks.length+' 个热点':'未发现热点，请重新扫描',!wifiNetworks.length);return;
+  }
+  if(line==='@WIFI SCAN_ERROR'){wifiFinish('扫描失败，请检查 ESP8266 供电和串口连接',true);return;}
+  if(line==='@WIFI JOIN_QUEUED'){wifiReply('正在验证密码并保存配置...');return;}
+  if(line==='@WIFI SAVE_PENDING'){wifiBegin('save');wifiReply('热点已连接 · 等待 Flash 保存');return;}
+  if(line==='@WIFI JOIN_SAVED'){wifiFinish('已连接并保存，设备正在重连云端');return;}
+  if(line==='@WIFI JOIN_ERROR'){wifiFinish('热点连接失败，原配置未修改，请检查密码后重试',true);return;}
+  if(line==='@WIFI SAVE_ERROR'){wifiFinish('保存未确认，请复位后核对配置与 Flash 状态',true);return;}
+  if(line==='@WIFI SAVE_BUSY'){wifiFinish('存储忙，未保存新热点。请等待配置写入完成后重试。',true);return;}
+  if(line==='@WIFI REJECTED'||line==='@WIFI BUSY'){wifiFinish('设备忙或输入不受支持，请检查后重试',true);return;}
+  if(line.startsWith('@WIFI +CWLAP:')){
+    if(wifiOperation!=='scan')return;
+    const raw=line.slice('@WIFI +CWLAP:'.length),m=raw.match(/^\((\d+),"((?:[^"\\]|\\.)*)",(-?\d+),"([^"]*)"/);
+    if(!m)return;
+    const ssid=m[2].replace(/\\(.)/g,'$1'),rssi=Number(m[3]),open=m[1]==='0';
+    if(!ssid||wifiNetworks.some(x=>x.ssid===ssid)||wifiNetworks.length>=64||!integer(rssi,-127,0))return;
+    wifiNetworks.push({ssid,rssi,open});
+    const option=document.createElement('option');option.value=ssid;option.textContent=`${ssid} · ${rssi} dBm · ${open?'开放':'加密'}`;$('wifi-list').append(option);
+  }
+}
+async function serialReadLoop(port){
+  const decoder=new TextDecoder(),reader=port.readable.getReader();serialReader=reader;
+  try{for(;;){const {value,done}=await reader.read();if(done)break;
+    serialBuffer+=decoder.decode(value,{stream:true});
+    let end;while((end=serialBuffer.indexOf('\n'))>=0){
+      const line=serialBuffer.slice(0,end).replace(/\r$/,'');serialBuffer=serialBuffer.slice(end+1);
+      if(line.length<=512)parseWifiLine(line);
+    }
+    if(serialBuffer.length>512)throw new Error('串口报文过长');
+  }}catch(e){if(!serialClosing)wifiReply('串口读取失败：'+e.message,true);}
+  finally{reader.releaseLock();serialReader=null;}
+  if(!serialClosing)void serialDisconnect('串口连接已中断，请重新连接');
+}
+async function serialConnect(){
+  if(!('serial' in navigator)){wifiReply('当前浏览器不支持 USB 串口',true);return;}
+  if(serialPort||serialOpening||serialClosing)return;
+  serialOpening=true;wifiControls();
+  try{
+    serialPort=await navigator.serial.requestPort();
+    await serialPort.open({baudRate:115200});serialWriter=serialPort.writable.getWriter();
+    serialBuffer='';setSerialState('开发板已连接','online');
+    serialReadTask=serialReadLoop(serialPort);await wifiScan();
+  }catch(e){
+    await serialDisconnect();
+    wifiReply(e.name==='NotFoundError'?'未选择串口':'无法打开串口，请关闭串口调试助手后重试：'+e.message,true);
+  }finally{serialOpening=false;wifiControls();}
+}
+async function serialDisconnect(message='串口已断开'){
+  if(serialClosing)return;
+  serialClosing=true;wifiControls();
+  try{
+    if(serialReader)await serialReader.cancel();
+    if(serialReadTask)await serialReadTask;
+    if(serialWriter){serialWriter.releaseLock();serialWriter=null;}
+    if(serialPort)await serialPort.close();
+  }catch(_){}
+  finally{
+    serialPort=serialWriter=serialReader=serialReadTask=null;serialBuffer='';serialClosing=false;
+    $('wifi-password').value='';setSerialState('未连接 USB 串口');wifiFinish(message);
+  }
+}
+async function serialSend(line){
+  if(!serialWriter){wifiReply('请先连接开发板',true);return false;}
+  try{await serialWriter.write(new TextEncoder().encode(line+'\n'));return true;}
+  catch(e){await serialDisconnect();wifiReply('串口发送失败：'+e.message,true);return false;}
+}
+async function wifiScan(){
+  if(!serialWriter||wifiOperation)return;
+  wifiNetworks=[];$('wifi-list').replaceChildren(new Option('扫描中...',''));$('wifi-password').value='';
+  wifiBegin('scan');wifiReply('正在扫描附近热点...');
+  if(!await serialSend('SCAN'))wifiControls();
+}
+async function wifiJoin(){
+  if(wifiOperation)return;
+  const ssid=$('wifi-list').value,network=wifiNetworks.find(n=>n.ssid===ssid);
+  const password=network&&network.open?'':$('wifi-password').value,encode=new TextEncoder();
+  const sn=encode.encode(ssid).length,pn=encode.encode(password).length;
+  if(!network||sn<1||sn>32||pn>64||/[\x00-\x1f\x7f"\\,]/.test(ssid+password)){
+    wifiReply('热点名需 1–32 字节，密码最多 64 字节，不能含控制字符、引号、逗号或反斜线',true);return;
+  }
+  if(!network.open&&(pn<8||(pn>63&&!/^[a-fA-F0-9]{64}$/.test(password)))){
+    wifiReply('加密热点需要 8–63 字节密码，或 64 位十六进制密钥',true);return;
+  }
+  wifiBegin('join');wifiReply('正在连接热点...');
+  await serialSend('JOIN\t'+ssid+'\t'+password);$('wifi-password').value='';
+}
 function resetData(){
   deviceOnline=false;lastReceived=0;data=null;config=null;pending=null;points.length=0;
   for(const id of ['temp','hum','distance','human','smoke','air','mode','state','alarm','quality','clock','fault-code'])text(id,'--');
@@ -104,7 +235,7 @@ function renderHealth(){
   text('freshness',lastReceived?'更新于 '+Math.floor((Date.now()-lastReceived)/1000)+' 秒前':'尚无数据');
   if(data&&!fresh){text('alarm-title','数据已过期');$('alarm-strip').dataset.tone='error';}
   for(const id of ['arm-on','arm-off'])$(id).disabled=!online||Boolean(pending);
-  for(const id of ['fan','fan-send','fan-stop','servo','servo-send','servo-zero','buzzer','buzzer-send'])$(id).disabled=!manual||Boolean(pending);
+  for(const id of ['fan','fan-send','fan-stop','servo','servo-send','servo-zero'])$(id).disabled=!manual||Boolean(pending);
   text('control-note',!online?'等待在线设备与有效数据':!manual?'执行器控制需撤防、无故障且传感器数据有效':pending?'等待设备回执':'已撤防，可控制执行器');
   if(pending&&Date.now()-pending.at>12000){pending=null;reply('回执超时，执行结果未确认',true);renderHealth();}
 }
@@ -155,7 +286,7 @@ function message(topic,buffer,packet={}){
          !integer(obj.distance,0,500)||!integer(obj.smoke,0,60000)||!integer(obj.air,0,60000))throw new Error('配置格式无效');
       config=obj;eventRow('配置','序号 '+obj.seq+' · 温度 '+obj.temp+'°C · 距离 '+obj.distance+'cm');
     }else if(suffix==='cmd/resp'){
-      if(!integer(obj.id,0,65535)||!['arm','fan','servo','buzzer','th','reboot','ack','time','unknown'].includes(obj.cmd)||
+      if(!integer(obj.id,0,65535)||!['arm','fan','servo','th','reboot','ack','time','unknown'].includes(obj.cmd)||
          !['done','queued','rejected','accepted'].includes(obj.status)||packet.retain)throw new Error('回执格式无效');
       const names={done:'已执行',queued:'等待保存',rejected:'已拒绝',accepted:'已接受'};
       eventRow('回执','#'+obj.id+' '+obj.cmd+' · '+names[obj.status]);
@@ -201,8 +332,8 @@ function send(cmd,value){
      manual&&(data.state!==2||data.mode!==0||data.fault!==0||data.q!==31)){
     reply('当前状态不允许发送',true);return;
   }
-  const max={arm:1,fan:100,servo:180,buzzer:10000}[cmd];
-  if(!integer(value,cmd==='buzzer'?1:0,max)){reply('数值超出范围',true);return;}
+  const max={arm:1,fan:100,servo:180}[cmd];
+  if(!integer(value,0,max)){reply('数值超出范围',true);return;}
   pending={cmd,id:null,at:Date.now()};reply(cmd+' · 已发送，等待设备回执');renderHealth();
   client.publish(root+'/cmd',cmd+'='+value,{qos:0,retain:false},err=>{
     if(err){pending=null;reply('发送失败：'+err.message,true);renderHealth();}
@@ -245,8 +376,17 @@ for(const id of ['fan','servo'])$(id).addEventListener('input',()=>text(id+'-val
 $('arm-on').onclick=()=>send('arm',1);$('arm-off').onclick=()=>send('arm',0);
 $('fan-send').onclick=()=>send('fan',Number($('fan').value));$('fan-stop').onclick=()=>send('fan',0);
 $('servo-send').onclick=()=>send('servo',Number($('servo').value));$('servo-zero').onclick=()=>send('servo',0);
-$('buzzer-send').onclick=()=>send('buzzer',Number($('buzzer').value));
 $('clear-events').onclick=()=>{$('events').replaceChildren();$('empty').hidden=false;};
+$('serial-connect').onclick=serialConnect;
+$('serial-disconnect').onclick=()=>serialDisconnect();
+$('wifi-scan').onclick=wifiScan;
+$('wifi-join').onclick=wifiJoin;
+$('wifi-list').onchange=()=>{$('wifi-password').value='';wifiControls();};
+$('password-show').onchange=()=>{$('wifi-password').type=$('password-show').checked?'text':'password';};
+if('serial' in navigator)navigator.serial.addEventListener('disconnect',e=>{
+  if(e.target===serialPort||e.port===serialPort)void serialDisconnect('开发板已拔出，请重新连接');
+});
+setSerialState('未连接 USB 串口');wifiControls();
 window.addEventListener('resize',drawGraphs);
 setInterval(()=>{renderHealth();drawGraphs();},1000);
 try{

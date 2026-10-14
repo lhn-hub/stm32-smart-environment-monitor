@@ -6,9 +6,6 @@
 #include "app_secrets.h"
 #endif
 #endif
-#ifndef APP_NETWORK_PROVISION
-#define APP_NETWORK_PROVISION 0
-#endif
 #define APP_FW_VERSION "0.9.0-dev"
 #ifndef APP_CRITICAL_AUDIT
 #define APP_CRITICAL_AUDIT 0
@@ -89,7 +86,6 @@
 #define APP_EDIT_MAX_TEMP 100
 #define APP_EDIT_MAX_DISTANCE 500
 #define APP_EDIT_MAX_CONFIRM_MS 60000
-#define APP_MENU_BEEP_MS 100u
 #define APP_UI_ROWS_Y 16
 #define APP_UI_ROW_HEIGHT 8
 #define APP_UI_STATUS_X 66
@@ -105,7 +101,6 @@
 #define APP_I2C_LAST_ADDR 119u
 #define APP_I2C_RECOVERY_CLOCKS 9u
 #define APP_I2C_PULSE_US 5u
-#define APP_BEEP_MAX_MS 10000u
 #define APP_PANIC_UART_SPINS 100000u
 #define APP_TEMP_FAULT_VALUE (-32768)
 #define APP_WATCHDOG_STARTUP_MS 1500u
@@ -123,7 +118,7 @@
 #define APP_DATAHUB_LOCK_MS 5u
 #define APP_FILTER_WINDOW 5u
 /* Enable only AFTER confirming the translated DO wiring in Docs/M8-wiring.md. */
-#define APP_MQ_DO_ENABLED 0
+#define APP_MQ_DO_ENABLED 1
 #define APP_SENSOR_UNKNOWN (-1)
 #define APP_RADAR_SETTLE_MS 1000u
 #define APP_MCU_STALE_MS 1000u

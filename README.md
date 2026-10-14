@@ -1,57 +1,104 @@
-# sms-hub
+# sms-hub：STM32 智能环境监测与安防联动
 
-M4软件已实现：W25Q64总线互斥、双4KB Bank配置（512B槽）、64KB事件环、LogTask队列、菜单确认落盘和最近20条事件。默认`Docs/build.ps1`构建M4；接线/真实断电测试见`Docs/M4-acceptance.md`。W25Q供电3V3，TB6612/电机暂断开，MQ DO仍保持断开。存储未就绪时显示STORE OFFLINE，不能假定配置已保存。真实M4断电验收未执行，v0.5未打标；下方旧阶段内容为历史记录。
+本项目基于 STM32F103C8T6、FreeRTOS、W25Q64、OLED、DHT11、超声波、Rd-03 雷达、MQ2/MQ135、SG90、TB6612 风扇和 ESP8266，提供本地菜单、MQTT 控制和单文件云看板。
 
-**最新超声波接线修订（2026-10-07已确认）：TRIG=PA15、ECHO=PB3/EXTI3**，模块原接口直插。旧PB3触发/PA15回波描述错误且已修正；烧录前断电拔下模块，烧录完成后断电插回，避免旧固件输出争用。详情见`Docs/M3-ultrasonic-root-cause.md`。
+## 当前交付状态
 
-M3软件已集成：六实例sensor_ops注册表、DHT11/超声/Rd-03/MQ门控/MCU ADC、滤波与互斥DataHub，主页显示真实值和质量。`Docs/build.ps1`现默认构建M3；操作和串口格式见`Docs/M3-acceptance.md`。MQ DO必须断开，正式构建仍禁用，不把5V电平问题当成软件可修复。v0.4待实物验收，M2以下说明保留为历史。
+- 最终生产配置：`APP_MQ_DO_ENABLED=1`，蜂鸣器模块已删除，PB4 保留给 Rd-03 雷达。
+- ESP8266 保留现有 `AT1.7.4.0 / SDK3.0.5`，STM32 通过 TCP 承载 MQTT，不擦写 ESP Flash。
+- 固件镜像不随源码上传；设备网络配置保存在本地 KV，构建后按验收文档在本机烧录。
+- 最后一次 Keil 构建：0 Error、0 Warning；Flash `61416/61440 B`，RAM `20256/20480 B`。
+- 主机 C 回归、网页布局/协议回归已通过；本轮真实 H/T 板测、手机看板、24 小时烤机和临界区耗时仍需按 [`Docs/test_report.md`](Docs/test_report.md) 留证。
 
-M3硬件修订：用户已确认雷达采用安信可Rd-03，3V3/GND供电、OT2接PB4，高有效；取代旧AT6010/M7描述。OT1/RX仅用于独立配置，USART3继续供ESP8266使用。
+## 30 分钟复现
 
-里程碑：2026-10-05用户确认M2“功能完整”，发布`v0.3`（PA0三键菜单，EC11停用）。后文待验收描述为历史交付记录。
+1. 准备 STM32F103C8T6 核心板、扩展板 V1.0.2、CMSIS-DAP、USB-UART、3.3 V/5 V 电源和本 README 中的模块。
+2. 断电，按下表接线；MQ2/MQ135 的 DO 必须经过 5 V→3.3 V 电平转换，AO 悬空。
+3. 打开 `MDK-ARM/sms-hub.uvprojx`，Rebuild，确认本机 Keil 输出 0 Error/0 Warning。
+4. 仅通过 SWD 下载 STM32；不要擦除 W25Q64，不要升级 ESP8266。下载后复位并打开 USART1：115200、8N1。
+5. 看到 `Flash JEDEC=0xEF4017`、KV/传感器自检和任务水位日志后，等待 MQ 模块至少预热 5 分钟。
+6. 双击 `WebDashboard/index.html`，设备名填 KV 中的 `dev`（默认 `sms-hub`；看板输入框默认 `sms01` 仅是示例），连接 `broker.emqx.io:8084`。
+7. 订阅 `smshub/<dev>/#`，先发送 `arm=0`，等待 `cmd/resp` 的 `done`，再按 [`Docs/reproduce-checklist.md`](Docs/reproduce-checklist.md) 做最小功能验证。
 
-最新交互方案：用户取消EC11，KEY1/PA0单击下一项、长按上一项，PB15确认，PC13返回。编辑阈值时PA0单击增加、长按减少；PB15长按启用短时10倍步进。断电拆下EC11，旧文档中的旋钮描述不再适用。
+## 硬件清单与逐线接线
 
-当前开发版本：M2 OLED/EC11/菜单已实现，0错误0警告及主机测试通过，等待实板验收，暂未标记v0.3。操作见`Docs/M2-acceptance.md`；默认`Docs/build.ps1`构建M2。OLED用原PB6/PB7，EC11用PA12/PA11；PB15确认、PC13返回。M2显示页面采用ASCII及7个中文小字模，串口继续UTF-8中文。
+所有模块共地。舵机、风扇和 MQ 加热器的 5 V 电流不能通过 MCU 3.3 V 稳压器承担；上电前测量 5 V。蜂鸣器不再接入。
 
-最新状态：2026-10-05用户确认M1验收完毕，发布`v0.2`。保留温度FAULT、VDDA标称估算等已说明限制；下方待验收说明为此前交付记录。
+| 模块/信号 | 扩展板或模块端 | STM32/GPIO | 备注 |
+|---|---|---|---|
+| USART1 调试/配网 | CH340 TX/RX | PA10 RX、PA9 TX | 115200 8N1；不要插 USB_DEVICE |
+| OLED SSD1306 | I2C1 SCL/SDA、3V3、GND | PB6 SCL、PB7 SDA | 7-bit 地址 `0x3C`，400 kHz |
+| DHT11 | VCC=3V3、GND、DATA | PB12 | 直插模块 IO3；裸传感器线序不同 |
+| 超声波 CS100A | TRIG/ECHO/3V3/GND | PA15 TRIG、PB3 ECHO | NOJTAG 释放 PB3/PA15；断电插拔 |
+| Rd-03 雷达 | OT2 | PB4 | 高有效；OT1/RX 只用于独立配置 |
+| MQ2 烟雾 | IO1 VCC0、GND、DO | PA12（A12） | VCC0 跳帽拨 5V；DO 经电平转换；AO 不接 |
+| MQ135 空气 | IO2 VCC1、GND、DO | PA11（A11） | VCC1 跳帽拨 5V；DO 经电平转换；AO 不接 |
+| W25Q64 | CS/SCK/MISO/MOSI、3V3、GND | PA4/PA5/PA6/PA7 | 与 TB6612 共享，SPI 由仲裁器切换 |
+| TB6612 B 通道 | STBY、BIN1、BIN2、PWMB、VM、VCC、GND | PA4、PA7、PB13、PB1 | 仅 B 通道；A 通道/PWMA 不初始化；VM 按电机规格供电 |
+| SG90 | 红=5V、棕/黑=GND、橙/黄=信号 | PA8 / TIM1_CH1 | 500～2500 us，开机 0°，独立 5 V 电源更稳 |
+| RGB 指示灯 | R/G/B | PA1/PA2/PA3 / TIM2_CH2/3/4 | 有源低；软件效果灯 |
+| 按键 | KEY1、KEY2、KEY3 | PA0、PC13、PB15 | PA0 单击下一项、长按上一项；PC13 返回；PB15 确认 |
+| ESP8266-12F | TX/RX/RST/IO0 | PB10 TX、PB11 RX、PB9 RST、PB8 IO0 | 3.3 V；运行态 IO0=高；USART3 DMA+IDLE |
 
-基于 FreeRTOS 的智能环境监测与安防联动系统。当前 M1：BSP与FreeRTOS骨架已实现，编译/主机测试通过，物理DoD待验收。下方M0章节保留作基线说明。
+MQ 电平转换连接：转换板 `HV=扩展板5V`、`LV=扩展板3V3`、GND 共地；MQ2 DO→HV1/LV1→PA12，MQ135 DO→HV2/LV2→PA11。未接转换板时禁止下载生产镜像。
 
-## M1快速开始
-关闭旧Keil工程窗口后重新打开 `MDK-ARM/sms-hub.uvprojx`；运行 `Docs/build.ps1` 默认重编译M1。六任务保留原栈/优先级，heap_4=11KB，HAL时基TIM4。
-接线、每项DoD步骤和预期串口文字见 `Docs/M1-acceptance.md`。COM6 115200 8N1；业务传感器和电机不接。校准源未确认，温度显示FAULT，VDDA标称估算；不能把30~60℃项标为通过。
-构建日志 `Docs/M1-build.log`，map `Docs/M1-map.txt`，主机结果 `Docs/M1-tests.log`。30分钟和看门狗复位时间没有实测，暂不打v0.2。正式构建中故障注入宏为0；测试版步骤见验收文档。
+## 编译、下载与版本
 
-## 工具链
-- Keil MDK 5.43.1，Arm Compiler 6.24；CubeMX CLI 6.18.1；STM32CubeF1 v1.8.7；Git2.54.0。
-- 官方Cube包来源 https://github.com/STMicroelectronics/STM32CubeF1/tree/v1.8.7 ，HAL/CMSIS固定子模块提交见Docs。
-- `MDK-ARM/sms-hub.uvprojx`：C99、-Os、函数/数据分段、MicroLIB、armlink --remove。
-- Cortex-M3、64KB Flash、20KB RAM；最终固件Flash红线60KB。
+```powershell
+.\Docs\build.ps1 -Stage M8
+```
 
-## 编译
-打开MDK工程，Rebuild；完整结果见 `Docs/M0-build.log`，map归档 `Docs/M0-map.txt`。
-PowerShell可运行 `./Docs/build.ps1`。生成器源码已做配置集中化及最小main后处理；不要直接重新生成覆盖这些修改。重新生成后必须重新应用差异并复跑静态核查，当前不承诺一键无损再生成。
+正常构建必须保持 `APP_M8_TEST_ENABLED=0`、`APP_CRITICAL_AUDIT=0`。测试镜像仅用于专门注入：
 
-## 接线与下载
-1. 核对核心板STM32F103C8T6与扩展板V1.0.2；上方USB Device口禁止插线，PA11/PA12留给EC11。
-2. M0仅接DAP的SWDIO/SWCLK/GND与正确电压参考，以及CH340对应USB。保持外设/马达断电。
-3. 后续外设跳帽VM=5V、通讯接口VCC3=3V3；DC12V+USB双供电按原板说明核对，禁止把不同电源输出互接。
-4. Keil Debug选CMSIS-DAP，Settings中确认探针序列号和SWD；Flash Download确认64KB目标算法、Erase/Program/Verify以及Reset and Run。已保存DAP相关默认配置，但没有探针，尚不能验证驱动参数生效。
-5. 下载、校验、复位后观察main/uwTick；连续两次读取uwTick应递增；TIM4 PSC=71、ARR=999、DIER.UIE=1、NVIC优先级4；AFIO.MAPR SWJ_CFG=010。断开调试后复位再次验证独立运行。
+- `Docs/M8-test.hex`：栈保护测试，结束后必须烧回正常镜像。
+- `Docs/M8-audit.hex`：DWT 临界区采集，不用于烤机。
 
-## M0可见现象与边界
-最小main只HAL_Init、SystemClock_Config、bsp_board_init、空循环。RGB三个GPIO静态低，亮灭取决于板卡真实极性，尚未实测。无串口初始化/打印，无OLED初始化，因此本阶段没有启动串口原文或OLED画面承诺。
-TIM4中断仅增加HAL tick；SysTick不调用HAL_IncTick，M1接入FreeRTOS。其他外设初始化函数保留编译，但M0不调用；不运行电机、舵机、ADC或网络。
-微秒函数基于tick/CNT/UIF重读；只允许能被TIM4抢占的上下文。delay_us仅线程、非临界区且小于1000us；长等待使用调度/状态机。M0未启用IWDG是附件要求，M1必须加入看门狗，不能当作功能修复删除。
+Keil 选 CMSIS-DAP、64 KB Flash 算法、Erase/Program/Verify、Reset and Run；SWD 保留，代码只关闭 JTAG（NOJTAG），不关闭 SWD。
 
-## 兼容性与校准
-三个地址仅诊断候选，校准默认禁用，非0/非FFFF不是数据来源证据。M1来源未确认时VDDA用标称1200mV估算，内部温度quality=FAULT；串口/System页明确路径。经验证的30℃单点计算用负斜率；禁止直接解引用候选地址作为温度校准。
+## WiFi / MQTT
 
-## 资源与后续验收
-M0基线：Flash5824B，静态RAM1392B（含启动栈/库区），初始空工程增量相同；完整最终map为准。应用六栈共7424B、heap_4 11264B预算尚未接入，不能据M0空闲量宣称最终RAM闭环。
-微秒函数主机边界测试通过不替代逻辑分析仪精度测试。PA4~7电气切换/A通道无驱动和TIM1 MOE留待M4/M5实测。
-M1最低手工清单：保留DAP、CH340、核心板电源；确认HSE/LSE运行与复位；目前未收到M1具体任务，不擅自要求插接业务外设。
+设备默认连接配置在 W25Q64 KV 中；网页 WiFi 页通过本地 USB Web Serial 扫描 `CWLAP`、选择热点并保存密码，密码不会发布到 MQTT。ESP 仍使用当前 AT 固件。
 
-## 阶段记录
-M0 DoD：编译通过、NOJTAG位置和引脚配置可查；DAP下载/自动运行待实物；首次提交后保留v0.1标签待上板验收。详见Docs/M0-static-review.md。
+| 参数 | 值 |
+|---|---|
+| 设备 MQTT Broker | `broker.emqx.io:1883` |
+| 看板 WebSocket | `wss://broker.emqx.io:8084/mqtt` |
+| 根主题 | `smshub/<dev>` |
+| 发布 | `/status`、`/telemetry`、`/event`、`/config` |
+| 订阅 | `/cmd`；回执 `/cmd/resp` |
+| LWT | `/status` payload `offline`；上线 retained `online` |
+| keepalive | 60 s |
+
+常用命令：`arm=0`、`arm=1`、`fan=45`、`fan=0`、`servo=90`、`servo=0`、`ack=1`、`th=temp:50`、`th=distance:100`、`th=smoke:3000`、`th=air:10000`、`time=<Unix秒>`、`reboot=1`。每条命令必须等待最终 `done` 或 `rejected`，`queued` 不代表已经写入 KV。
+
+## 目录结构
+
+```text
+App/                 任务、DataHub、报警状态机、菜单、存储
+BSP/                 引脚、时钟、控制、总线仲裁、串口、看门狗
+Drivers_Device/      DHT11、超声波、Rd-03、W25Q64、SG90、TB6612
+Middleware/FreeRTOS  FreeRTOS 内核
+Src/ Inc/             CubeMX/HAL 初始化与中断
+WebDashboard/         单文件 MQTT.js + Canvas 看板
+Docs/                 构建日志、验收、测试脚本、接线和交付文档
+MDK-ARM/              Keil 工程
+```
+
+## 已知限制与二期扩展
+
+- 单 DO 的 MQ/雷达输入无法仅靠软件可靠判断“拔线”；DHT11/超声波可通过超时和质量位进入 FAULT。
+- 公共 EMQX 仅用于演示，没有项目级访问隔离；不要在其中使用真实生产凭据。
+- 传感器精度、舵机角度、风扇噪声、电平波形、手机延迟、24 小时稳定性必须由实物证据确认。
+- Flash 余量仅 24 B，RAM 余量 224 B；不再加入运行时功能。
+- 二期候选：智慧农业规则、低功耗 STOP+RTC、IAP 双区 OTA、MAX30102 健康页。每项先做 64 KB/20 KB 可行性评估。
+
+## M9 交付索引
+
+- [`Docs/test_report.md`](Docs/test_report.md)：H-01～H-10、T-01～T-15 实测矩阵和证据插槽
+- [`Docs/demo_storyboard.md`](Docs/demo_storyboard.md)：3 分钟六段演示脚本
+- [`Docs/resume-and-interview.md`](Docs/resume-and-interview.md)：中英文简历条目与 20 个面试问答
+- [`Docs/reproduce-checklist.md`](Docs/reproduce-checklist.md)：陌生人 30 分钟复现清单
+- [`Docs/project-architecture-summary.md`](Docs/project-architecture-summary.md)：任务图、数据流、Flash/RAM 资源页
+- [`Docs/M8-acceptance.md`](Docs/M8-acceptance.md)：M8 详细板测步骤
+
+`v1.0` 只有在测试报告中的严重问题全部关闭、硬件证据归档后创建；当前工作区不提前伪造该标签。

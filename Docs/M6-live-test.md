@@ -4,9 +4,9 @@
 
 ## 本次实机通过证据
 
-- 串口日志：启动后收到 `ready`、完整 `AT+GMR`，并在 `[14296]` 报告 `网络在线 IP=10.97.164.35`。
-- MQTTX：订阅 `smshub/sms-hub-8e7c4b91/#` 后收到设备 retained 状态 `smshub/sms-hub-8e7c4b91/status=online`。
-- MQTTX：收到设备 telemetry `smshub/sms-hub-8e7c4b91/telemetry`，时间为 `18:20:37.350` 和 `18:20:42.228`，间隔约 5 秒；payload 中 `wifi=1,mqtt=1`，字段顺序正确。
+- 串口日志：启动后收到 `ready`、完整 `AT+GMR`，并报告设备已获取局域网 IP（具体地址已省略）。
+- MQTTX：订阅 `smshub/<dev>/#` 后收到设备 retained 状态 `smshub/<dev>/status=online`。
+- MQTTX：收到设备 telemetry `smshub/<dev>/telemetry`，采样间隔约 5 秒；payload 中 `wifi=1,mqtt=1`，字段顺序正确。
 - 原始串口记录归档为 `M6-mqtt-live-20261013.log`，MQTTX 截图归档为 `M6-mqttx-live-20261013.png`。
 - 本次证据证明“现有 AT 固件 + STM32 TCP-MQTT”已打通 Wi-Fi、TCP、MQTT CONNECT/SUBSCRIBE/PUBLISH 和周期 telemetry；不等同于全部 M6 DoD 已完成。
 - 5~50 秒内的 10 次堆采样均为 824 B，看门狗故障均为 0；网络任务最低剩余栈为 242/512 字（47%）。这是短时结果，不能替代 4 小时统计。
@@ -14,17 +14,17 @@
 
 ## 已完成
 
-- 热点实查：OPPO A5，2.4GHz，频道11，WPA2。
-- MQTTX 1.13.1连接broker.emqx.io:1883，Client ID=mqttx-pc-m6-20261013。
+- 热点实查：2.4GHz、频道11、WPA2（热点名称已省略）。
+- MQTTX 1.13.1连接broker.emqx.io:1883（客户端标识已省略）。
 - 电脑独立非retained回显：11:10:17.546发送，11:10:17.749收到；这不是开发板消息。
-- 本机开发板的设备名设为sms-hub-8e7c4b91，MQTTX已实际添加订阅smshub/sms-hub-8e7c4b91/#。
+- 本机开发板的设备名与 MQTTX 订阅标识已匿名化，订阅格式为 `smshub/<dev>/#`。
 - FireDAP实际下载、校验、启动成功；证据见M6-download.log。
 - 网络字段从旧KV序号4提交为5，旧事件日志继续可读；后续重复下载/重启仍为序号5，不重复配置写入。
 - 实际C存储回归覆盖非网络字段/保留区/事件保留、重启幂等、失败时旧KV有效；M6模型、UART模型通过。
 - TCP-MQTT 构建0错误0警告，Flash56172/61440B、RAM19672/20480B；较 M5 普通基线减少680B、增加24B RAM。
 - 短时现场堆824B、看门狗故障0。不能代替4小时稳定性验收。
 
-热点密码仅在Git忽略的App/app_secrets.h与设备配置中，未放入本文档；固件仍包含本地凭据，不应公开分享该HEX/AXF。
+热点密码仅保存在本地忽略文件与设备配置中，未放入本文档；固件镜像也不作为源码发布附件。
 
 ## 修线后复测
 
@@ -35,7 +35,7 @@
 - 实际C回归先RED后GREEN，并覆盖实际配置被拒绝后3次重试/复位、不误报ONLINE；原UART回归通过。
 - 构建0错误0警告，Flash55500/61440B、RAM20176/20480B，较上一诊断版本-4B/0B；静态RAM仅余304B。
 - FireDAP在12:16:51实际下载/Verify OK/Application running；见`M6-mqtt-probe-download-20261013-121640.log`。
-- 烧录HEX SHA256：`44B2A656ED2603BE7434498959AA89012B20D2E80BF371B77AE3A0ED41BF3338`。该固件仍含本地凭据，不可公开。
+- 板上固件哈希未纳入公开文档；源码仓库不上传含现场凭据的固件附件。
 - 新启动证据：`M6-mqtt-probe-20261013-121640.log`。KV扫描序号5、事件下一序号39、存储就绪944ms；原网络配置未重复提交。
 - 新启动后共5轮、每轮3次实际MQTT配置均返回`ERROR`，共15次；没有探测OK、IP、RSSI或网络在线。程序在MQTT能力探测处停止前进，尚未进入CWJAP，不应归因为热点密码或Broker。
 - 可确定当前1.7.4固件不接受本工程这组内置MQTT配置命令；尚未核验其它厂商命令集，不把此结论泛化为模块绝对不能使用任何MQTT固件。
@@ -96,4 +96,4 @@ ESP8266 升级材料和历史接线记录仍保留在 `Docs/M6-esp-upgrade.md`�
 
 按实际模块确认PB8接的是EN还是GPIO0，不能混接。ESP-12F裸模组运行要求GPIO0高、GPIO2高、GPIO15低、EN/RST高。用户模块配套规格书建议3.3V供电峰值能力500mA以上；拓展板带稳压接口的输入电压必须按其原理图确认，不能直接给ESP芯片IO/VCC接5V。
 
-未发送任何风扇、舵机或蜂鸣器远程指令。核心在线和 telemetry 已通过；全部 cmd/resp、断网重连、真实掉电 LWT、4 小时稳定性仍待验收。公共 Broker/1883 不提供私密性或本设备访问控制，只用于临时联调。
+未发送任何风扇、舵机或蜂鸣器远程指令。核心在线和 telemetry 已通过；全部 cmd/resp、断网重连、真实掉电 LWT、4 小时稳定性仍待验收。公共 Broker/1883 不提供私密性或本设备访问控制，只用于临时联调。主题中的 `<dev>` 仅为占位符。

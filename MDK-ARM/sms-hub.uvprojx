@@ -457,9 +457,6 @@
           </Files>
         </Group>
         <Group>
-          <GroupName>Application/User/C:/Users/l/Desktop/STM32~2/sms-hub</GroupName>
-        </Group>
-        <Group>
           <GroupName>Drivers/STM32F1xx_HAL_Driver</GroupName>
           <Files>
             <File>

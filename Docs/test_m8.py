@@ -41,6 +41,15 @@ write("stm32f1xx_hal.h", r"""
     #define PWR_CR_DBP 1u
     #define USART_CR1_UE 1u
     #define USART_SR_TXE 1u
+    #define USART_CR1_RXNEIE 0x20u
+    #define USART_SR_RXNE 0x20u
+    #define USART_SR_ORE 8u
+    #define USART_SR_FE 2u
+    #define USART_SR_NE 4u
+    #define USART_SR_PE 16u
+    #define USART1_IRQn 37u
+    void HAL_NVIC_SetPriority(unsigned,unsigned,unsigned);
+    void HAL_NVIC_EnableIRQ(unsigned);
     #define RCC_FLAG_IWDGRST 1u
     #define HAL_OK 0
     extern unsigned wd_flag;
@@ -98,6 +107,16 @@ write("test.c", r"""
     void test_stop(void){++stops;longjmp(terminal,1);}
     void bsp_emergency_stop(void){++safe;}
     void MX_USART1_UART_Init(void){}
+    void HAL_NVIC_SetPriority(unsigned i,unsigned p,unsigned s){assert(i==37&&p==4&&!s);}
+    void HAL_NVIC_EnableIRQ(unsigned i){assert(i==37);}
+    static unsigned scans,joins;
+    int network_provision_scan(void){++scans;return 0;}
+    int bsp_console_wifi_text(char *,char *);
+    int network_provision_join(void){
+        char ssid[33],password[65];
+        if(bsp_console_wifi_text(ssid,password))return -1;
+        ++joins;return 0;
+    }
     int HAL_UART_Transmit(void *u,void *p,unsigned n,unsigned t){(void)u;(void)p;(void)n;(void)t;return 0;}
     void *xSemaphoreCreateMutex(void){return (void*)1;}
     int xSemaphoreTake(void *m,unsigned t){(void)m;(void)t;return 1;}
@@ -107,6 +126,9 @@ write("test.c", r"""
     void vPortEnterCritical(void){++critical;}
     void vPortExitCritical(void){assert(critical);--critical;}
     #include "../../BSP/bsp_console.c"
+    static void receive(const char *p,size_t n){
+        while(n--){uart.SR=USART_SR_RXNE;uart.DR=(uint8_t)*p++;bsp_console_rx_irq();}
+    }
     #include "hooks.h"
     typedef struct { uint32_t *pxStack;char pcTaskName[16]; } TCB;
     static TCB tcb,*pxCurrentTCB=&tcb;
@@ -148,6 +170,26 @@ write("test.c", r"""
         bsp_boot_stats(&resets,&boots);assert(resets==1&&boots==2&&!backup.DR4);
         memset(&backup,0,sizeof(backup));bsp_backup_restore();assert(backup.DR2==1&&backup.DR3==2);
         puts("PASS watchdog cause captured before reset-flag clearing; backup source reset preserves counters");
+        assert(!bsp_console_init() && (uart.CR1&USART_CR1_RXNEIE));
+        {
+            char ssid[33],password[65],longline[120];
+            receive("JOIN\ttest-ssid\ttest-password\n",strlen("JOIN\ttest-ssid\ttest-password\n"));
+            bsp_console_poll();assert(joins==1&&console_state==3);
+            receive("SCAN\nJOIN\tother\toverwrite\n",strlen("SCAN\nJOIN\tother\toverwrite\n"));
+            assert(!bsp_console_wifi_text(ssid,password));
+            assert(!strcmp(ssid,"test-ssid")&&!strcmp(password,"test-password"));
+            bsp_console_release();assert(!console_state&&!console_input[0]);
+            receive("JOIN\topen\t\n",strlen("JOIN\topen\t\n"));bsp_console_poll();
+            assert(joins==2&&!bsp_console_wifi_text(ssid,password)&&!password[0]);
+            bsp_console_release();memset(longline,'a',sizeof(longline));longline[119]='\n';
+            receive(longline,sizeof(longline));bsp_console_poll();assert(!console_state&&joins==2);
+            receive("JOIN\tx\tbad\0secret\n",sizeof("JOIN\tx\tbad\0secret\n")-1);bsp_console_poll();assert(joins==2&&!console_state);
+            receive("JOIN\tx\tbad\"quote\n",strlen("JOIN\tx\tbad\"quote\n"));bsp_console_poll();assert(joins==2&&!console_state);
+            receive("SCAN\r\n",strlen("SCAN\r\n"));bsp_console_poll();assert(scans==1&&!console_state);
+            uart.SR=USART_SR_ORE|USART_SR_RXNE;uart.DR='a';bsp_console_rx_irq();
+            receive("\n",1);bsp_console_poll();assert(!console_state&&console_bad==0);
+        }
+        puts("PASS actual console ISR: burst JOIN/CRLF, open AP, frozen credentials, overflow/NUL/AT injection/overrun rejection, release/retry");
     #if APP_CRITICAL_AUDIT
         bsp_audit_start();cycle.CYCCNT=0xfffffff0u;
         bsp_audit_enter(0x08001234u);
@@ -165,7 +207,10 @@ write("test.c", r"""
 for audit in (0, 1):
     args = ["D:/msys64/ucrt64/bin/gcc.exe", "-std=c99", "-Wall", "-Wextra", "-Werror",
             "-DAPP_NO_LOCAL_SECRETS", f"-DAPP_CRITICAL_AUDIT={audit}",
-            "-I", "tmp/m8-test", "-I", "App", "-I", "BSP", "tmp/m8-test/test.c",
+            "-I", "tmp/m8-test", "-I", "App", "-I", "BSP",
+            "-I", "Drivers_Device/eventlog", "-I", "Drivers_Device/kvstore",
+            "-I", "Drivers_Device/bus_arbiter", "-I", "Middleware/esp8266",
+            "tmp/m8-test/test.c",
             "-o", f"tmp/m8-test/test{audit}.exe"]
     subprocess.run(args, cwd=ROOT, env=ENV, check=True)
     subprocess.run([f"tmp/m8-test/test{audit}.exe"], cwd=ROOT, env=ENV, check=True)

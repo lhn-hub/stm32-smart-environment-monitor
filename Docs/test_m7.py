@@ -53,7 +53,6 @@ write("test.c", r"""
     int effect_set(effect_t v){effect=(unsigned)v;return 0;}
     int fan_set(unsigned v){if(v>100)return -1;fan=v;return 0;}
     int servo_write(unsigned v){if(v>180)return -1;servo=v;return 0;}
-    int beep_ms(uint16_t v){return v>10000?-1:0;}
     int rgb_set(uint16_t r,uint16_t g,uint16_t b){return r>999||g>999||b>999?-1:0;}
     int storage_set(unsigned field,int32_t value){
         if(field>=CFG_FIELD_COUNT || !store.ready || store.pending || value<0)return -1;
@@ -242,7 +241,6 @@ write("commands.c", r"""
     void alarm_acknowledge(void){++clears;}
     int alarm_manual_fan(unsigned value){(void)value;return allowed?0:-1;}
     int alarm_manual_servo(unsigned value){(void)value;return allowed?0:-1;}
-    int alarm_manual_beep(uint16_t value){(void)value;return allowed?0:-1;}
     int app_time_request(uint32_t value){return value>=1577836800u?0:-1;}
 """ + dispatch + r"""
     static void command(unsigned kind,unsigned field,int32_t value){

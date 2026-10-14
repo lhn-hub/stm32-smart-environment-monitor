@@ -81,10 +81,6 @@ static void network_commands_poll(uint32_t now)
             result = alarm_manual_servo((unsigned)command.value);
             reply = result ? NETWORK_REPLY_REJECTED : NETWORK_REPLY_DONE;
             break;
-        case NETWORK_CMD_BUZZER:
-            result = alarm_manual_beep((uint16_t)command.value);
-            reply = result ? NETWORK_REPLY_REJECTED : NETWORK_REPLY_DONE;
-            break;
         case NETWORK_CMD_ACK:
             alarm_acknowledge();result=0;reply=NETWORK_REPLY_DONE;
             break;
@@ -171,6 +167,7 @@ static void worker(void *argument)
             }
         }
         if(id==2) {
+            bsp_console_poll();
             bsp_net_poll();
             network_poll(now);
             network_commands_poll(now);

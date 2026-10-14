@@ -12,12 +12,9 @@ MQ135 VCC→IO2 VCC1（跳帽5V）、GND→GND、转换后DO→A11/PA11。
 两路AO不接，不直插整个四针模块；原 PB0/PB14 接法已替换。
 保持 USB_UART 供电及拓展板自锁开关，USB_DEVICE 不接。
 
-当前 `APP_MQ_DO_ENABLED=0`，正常镜像是 `Docs/M8-app.hex`。
-此时两路 MQ 显示不可用/FAULT，执行器手动控制禁用；不能把它判为接线成功。
-实测转换板LV侧正常高约3.3V、触发低约0V，两路供电5V且负载下稳定后，
-将 `APP_MQ_DO_ENABLED` 改为1，保持 `APP_CRITICAL_AUDIT=0`、`APP_M8_TEST_ENABLED=0`，
-重新运行 `& ./Docs/build.ps1 -Stage M8` 并归档新的HEX/map/资源/哈希，再下载。
-宏1构建资源可能改变，不能继续引用本轮宏0的数字。
+当前 `APP_MQ_DO_ENABLED=1`，正常镜像按两路电平转换接法构建。
+未接好转换板时不要把 5V DO 直接接 PA11/PA12；应先使用关闭 MQ 的诊断构建。
+保持 `APP_CRITICAL_AUDIT=0`、`APP_M8_TEST_ENABLED=0`，重新构建后再下载。
 
 MQ至少预热5分钟并标定；应用150秒屏蔽不代替模块预热。健康测试前必须所有必需传感器通信正常。
 单DO输入不能可靠判断拔线：DHT/超声超时可报FAULT，MQ/雷达开路诊断仍有限制。
@@ -26,7 +23,7 @@ MQ至少预热5分钟并标定；应用150秒屏蔽不代替模块预热。健�
 ## A-01 PC与手机看板
 
 1. 烧录正常固件，串口115200/8N1确认 `sms-hub 0.9.0-dev`、Flash/KV就绪与网络在线。
-2. PC双击 `WebDashboard/index.html`，设备栏填 `sms-hub-8e7c4b91` 后点击连接。
+2. PC双击 `WebDashboard/index.html`，设备栏填 KV 中的 `<dev>` 后点击连接。
    默认 `sms01` 是通用入口，实际设备名取KV/串口/MQTTX；若已改名，以实际值为准。
 3. 等待“看板已连接、设备在线”。查看温湿度/距离/人/烟/空气/模式/报警与故障码；
    温湿度单位x10在看板除以10，距离为cm。坏质量显示不可用，曲线断开不补假点。
@@ -42,7 +39,7 @@ MQ至少预热5分钟并标定；应用150秒屏蔽不代替模块预热。健�
 
 ## A-02 控制与协议
 
-主题前缀 `smshub/sms-hub-8e7c4b91`，订阅以下后缀；下行均到 `/cmd`，QoS0、retain=false。
+主题前缀 `smshub/<dev>`，订阅以下后缀；下行均到 `/cmd`，QoS0、retain=false。
 
 | 主题 | 内容 |
 | --- | --- |
@@ -70,7 +67,6 @@ MQ至少预热5分钟并标定；应用150秒屏蔽不代替模块预热。健�
 | --- | --- |
 | 风扇45% / 停止 | `fan=45` / `fan=0`，缓启/停转，同cmd done |
 | 舵机90° / 回零 | `servo=90` / `servo=0`，限速到目标，同cmd done |
-| 蜂鸣300ms | `buzzer=300`，响后自行停，同cmd done |
 | 布防 / 撤防 | `arm=1` / `arm=0`，queued→done，config与菜单同步；布防先预热 |
 
 故障、布防、过期、离线时控制应受限；离线按键不缓存，恢复网络不能补发旧执行器命令。
@@ -80,7 +76,7 @@ MQ至少预热5分钟并标定；应用150秒屏蔽不代替模块预热。健�
 ## A-03 真实栈保护与故障记录
 
 专用镜像 `Docs/M8-test.hex`，对应 `tmp/M8-test.axf`；仅供故障注入。
-先确保风扇停、舵机安全、蜂鸣停，接调试器并开始串口记录。
+先确保风扇停、舵机安全，接调试器并开始串口记录。
 
 1. 烧录测试镜像，用匹配AXF加载调试符号；正常运行至少10s，确认看门狗已启动。
 2. Keil Watch中设置 `m8_overflow_request=1` 并继续运行。
@@ -132,7 +128,7 @@ python Docs/audit_m8.py --log tmp/M8-critical-001.log --map Docs/M8-audit-map.tx
 
 ```powershell
 [System.IO.Ports.SerialPort]::GetPortNames()
-python Docs/m8_burn.py --capture --dev sms-hub-8e7c4b91 --port COM5 --seconds 86460 --output tmp/M8-burn-001
+python Docs/m8_burn.py --capture --dev <dev> --port COM5 --seconds 86460 --output tmp/M8-burn-001
 ```
 
 运行期间只订阅，不发送cmd，自动同时保存serial.log、mqtt.jsonl；结束生成report.json。

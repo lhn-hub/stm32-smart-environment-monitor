@@ -17,3 +17,10 @@ MDK-ARM/Listings/
 *.map
 __pycache__/
 App/app_secrets.h
+Docs/*.log
+Docs/*.map
+Docs/*-map.txt
+Docs/*.hex
+Docs/*.axf
+Docs/*.png
+MDK-ARM/*.uvoptx

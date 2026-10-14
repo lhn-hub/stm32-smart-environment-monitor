@@ -20,7 +20,7 @@ T-02～T-09 的健康布防/气体联动部分不能据此判定通过。
 1. M8 已按预留接口改为 MQ2 DO→PA12（IO1）、MQ135 DO→PA11（IO2），接线依据 `M8-wiring.md`；历史 M7 镜像仍为 PB0/PB14，不能混用。先测量，不能用软件开关替代电平转换。
 2. 两模块用5V供电、AO悬空、DO经转换；保持 TB6612 A 通道永久禁能/PWMA不初始化。未经确认不能直接打开 MQ 宏。
 3. 接口问题解决后将 `App/app_config.h` 的 `APP_MQ_DO_ENABLED` 改为 1，再构建、下载正常 M8，并重新记录资源、HEX 哈希；沿用本表的 M7 用例验收应用逻辑。
-4. OLED、DHT11、超声波、雷达、Flash、ESP 都应健康。DHT11 为 PB12；超声 TRIG PA15/ECHO PB3；雷达 DO 为 PB4。保持 M5 已验收的舵机/风扇接线。
+4. M7 历史镜像按当时接线记录验收：DHT11 为 PB12；超声 TRIG PA15/ECHO PB3；雷达 DO 为 PB5；蜂鸣器曾接 PB4。当前 M8 接线以 `Docs/M8-wiring.md` 为准：雷达改为 PB4，蜂鸣器模块已删除。保持舵机/风扇接线。
 5. 需要模拟 MQ 高低电平时，先把模块 DO 输出与 MCU 测试输入隔离，再使用已确认的 3.3 V 电平夹具。不能将模块输出直接短接到电源或地；不需要点火或释放烟气。
 
 两路 MQ 和雷达为单 DO 输入，带 `SENSOR_NO_OPEN_WIRE_TEST` 标记。
@@ -30,8 +30,8 @@ DHT11/超声波的通信超时、FAULT、STALE、数据过期可以检测并禁�
 ## 观察方式
 
 串口：115200、8N1，保存从启动开始的完整日志。MQTTX 延续 M6 的 Broker 连接。
-本设备现场主题前缀为 `smshub/sms-hub-8e7c4b91`；如 KV 中设备名变化，用实际设备名替换。
-订阅 `smshub/sms-hub-8e7c4b91/#`。所有下行发布到 `smshub/sms-hub-8e7c4b91/cmd`，QoS 0、**关闭 retained**。
+将 `<dev>` 替换为 KV 中配置的设备名。
+订阅 `smshub/<dev>/#`。所有下行发布到 `smshub/<dev>/cmd`，QoS 0、**关闭 retained**。
 
 | 主题后缀 | 观察内容 |
 | --- | --- |

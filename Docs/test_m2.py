@@ -115,7 +115,7 @@ int storage_get_fields(int32_t v[CFG_FIELD_COUNT],storage_status_t *s){memcpy(v,
 int storage_set(unsigned field,int32_t v){assert(field<CFG_FIELD_COUNT);persisted[field]=v;save_calls++;return 0;}
 int storage_event(uint32_t t,int32_t p,int32_t a){(void)t;(void)p;(void)a;return 0;}
 int storage_recent(unsigned index,event_record_t *r,unsigned *n){*n=20;if(index>=20)return -1;memset(r,0,sizeof(*r));r->seq=20-index;r->type=1;r->unix_time=1234;history_reads++;return 0;}
-static int pending,beeps;
+static int pending;
 static unsigned colors;
 void ec11_start(void){}
 int ec11_poll(void){int n=pending;pending=0;return n;}
@@ -125,7 +125,6 @@ uint32_t ec11_irq_count(void){return 0;}
 uint32_t ec11_invalid_count(void){return 0;}
 uint32_t rtc_get(void){return 3661;}
 uint32_t vdda_mv_get(void){return 3300;}
-int beep_ms(uint16_t ms){(void)ms;beeps++;return 0;}
 int rgb_set(uint16_t r,uint16_t g,uint16_t b){colors=r+g+b;return 0;}
 static unsigned fan_value,servo_value;
 int fan_set(unsigned p){assert(p<=100);fan_value=p;return 0;}
@@ -142,7 +141,6 @@ int alarm_set_mode(unsigned a){return storage_set(CFG_MODE,(int32_t)a);}
 int alarm_manual_fan(unsigned p){return fan_set(p);}
 int alarm_manual_servo(unsigned p){return servo_write(p);}
 int alarm_manual_effect(effect_t e){return effect_set(e);}
-int alarm_manual_beep(uint16_t ms){return beep_ms(ms);}
 int alarm_manual_rgb(uint16_t r,uint16_t g,uint16_t b){return rgb_set(r,g,b);}
 unsigned app_time_source(void){return 1;}
 void i2c_scan(void){}
@@ -169,7 +167,7 @@ int main(void){
  assert(save_calls==0);menu_key(&yes);assert(!editing&&save_calls==1&&persisted[0]==APP_EDIT_MAX_TEMP);
  menu_key(&back);selected[ROOT]=5;menu_key(&yes);now+=100;menu_poll();
  assert(history_count==20&&history_reads>0);selected[EVENTLOG]=19;menu_key(&next);assert(selected[EVENTLOG]==0);
- menu_key(&back);selected[ROOT]=3;menu_key(&yes);selected[MANUAL]=9;menu_key(&yes);assert(beeps==1);
+ menu_key(&back);selected[ROOT]=3;menu_key(&yes);selected[MANUAL]=9;menu_key(&yes);assert(colors==999);
  selected[MANUAL]=10;menu_key(&yes);assert(colors==999);selected[MANUAL]=8;menu_key(&yes);assert(colors==0);
  selected[MANUAL]=0;menu_key(&yes);assert(editing);
  menu_key(&prev);assert(fan_percent()==0);
@@ -180,17 +178,17 @@ int main(void){
  menu_key(&prev);assert(servo_angle()==179);menu_key(&next);menu_poll();menu_key(&yes);
  selected[MANUAL]=2;now+=100;menu_poll();menu_key(&back);assert(!fan_value&&!servo_value);
  menu_key(&yes);
- for(i=0;i<12;i++){menu_key(&next);}
+ for(i=0;i<11;i++){menu_key(&next);}
  menu_key(&yes);expect_header("FONTS");
  menu_key(&prev);expect_header("MANUAL TEST");
  menu_key(&next);menu_key(&next);expect_header("Fan %");
  {
-  uint8_t frames[15][1024];
-  for(i=0;i<15;i++){
+  uint8_t frames[14][1024];
+  for(i=0;i<14;i++){
    now+=APP_OLED_FRAME_MS;menu_poll();memcpy(frames[i],pixels,sizeof(pixels));menu_key(&next);
   }
   expect_header("Fan %");
-  for(i=15;i>0;i--){
+  for(i=14;i>0;i--){
    menu_key(&prev);now+=APP_OLED_FRAME_MS;menu_poll();
    assert(!memcmp(frames[i-1],pixels,sizeof(pixels)));
   }
@@ -200,7 +198,7 @@ int main(void){
  menu_key(&prev);menu_key(&yes);expect_header("FONTS");
  menu_key(&back);expect_header("MANUAL TEST");menu_key(&back);
  assert(!fan_percent()&&!servo_angle());
- puts("PASS Manual Test visible navigation: all 15 items forward/back/wrap, font preview long/click/back, edit decrement/clamp, exit safe");
+ puts("PASS Manual Test visible navigation: all 14 items forward/back/wrap, font preview long/click/back, edit decrement/clamp, exit safe");
  stack[depth]=MANUAL;
  for(i=0;i<3;i++){
   char path[64];FILE *f;unsigned x,y;selected[MANUAL]=i;manual_fan=100;manual_servo=180;
@@ -221,7 +219,7 @@ int main(void){
  mock_alarm.kind=ALARM_AIR;mock_alarm.transitions++;expect_header("AIR NOTICE");
  mock_alarm.state=ALARM_DISARMED;mock_alarm.kind=0;mock_alarm.transitions++;
  puts("PASS M7 actual OLED popup: FAULT/FIRE/INTRUSION/AIR, dismiss and restored navigation");
- puts("PASS actual menu: every page reachable/back, depth3, edit/accelerate/clamp, manual beep/RGB, all pages rendered");return 0;
+ puts("PASS actual menu: every page reachable/back, depth3, edit/accelerate/clamp, manual RGB, all pages rendered");return 0;
 }
 ''')
 from PIL import Image,ImageOps,ImageDraw

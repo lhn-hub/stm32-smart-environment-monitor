@@ -1,2 +1,0 @@
-PASS: stable tick, rollover, pending UIF, uint32 wrap, invalid delay/context
-PASS: config compile-time assertions (Arm Compiler 6.24)

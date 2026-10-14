@@ -13,7 +13,7 @@
 ## 接线检查
 - DHT11：PB12 DATA、3V3/GND，使用原通用IO3，核对供电/数据上拉均为3.3V；不要将模块高压上拉直接接入PB12。
 - CS100A：PA15 TRIG、PB3 ECHO，保留原接口/供电；TIM4为1MHz/每ms回卷的HAL时基，测量使用完整bsp_micros时间戳。
-- Rd-03：3V3/GND、OT2→PB4，高有效，3.3V电源需有≥200mA供电能力；OT1/RX不接USART3。
+- Rd-03：3V3/GND、OT2→PB5，高有效，3.3V电源需有≥200mA供电能力；PB4为蜂鸣器输出；OT1/RX不接USART3。
 - MQ2/MQ135 DO：暂不接PB0/PB14；即使软件禁用也不会隔离实际5V，必须物理断开。日后启用必须先处理电平，不可直接将宏改1后接原5V DO。
 - 电机仍不接；USB Device口不接。CH340串口115200、8N1、UTF-8。
 
@@ -23,7 +23,7 @@
 - `Drivers_Device/dht11/dht11.h/.c`：20ms开漏低电平启动（任务阻塞让出CPU），PB12/EXTI12有序脉宽捕获，82段响应/数据宽度、40bit解码与累加校验、温湿度×10整数，2100ms周期，5样本滑动均值。通信失败清空均值窗口，连续10次失败FAULT，恢复一帧后重新积累。
 - `Drivers_Device/cs100a/cs100a.h/.c`：12us触发，PB3/EXTI3双沿ISR只取时间戳，任务等待30ms超时；5样本中值先作用在us再四舍五入为cm；累计不足5样本STALE，连续5次失败FAULT，成功后自动恢复并重新填中值窗口。
 - `Drivers_Device/mq_gas/mq_gas.h/.c`：smoke/air两个实例，200ms扫描、低有效、300秒预热倒计时，预热期输出STALE且报警值0，辅助值保留原始DO。已通过主机模拟验证启用路径；正式固件安全门关闭，FAULT并带DISABLED标志，绝不显示正常空气。烟雾确认3秒、空气确认10秒，解除10秒；阈值菜单确认时间通过DataHub同步，仅RAM有效。
-- `Drivers_Device/radar_rd03/radar_rd03.h/.c`：PB4高有效，确认/解除均1秒。开机前1秒为STALE，此后质量GOOD仅表示电平采样与消抖有效，不表示验证了设备在线。带NO_OPEN_WIRE_TEST标志。
+- `Drivers_Device/radar_rd03/radar_rd03.h/.c`：PB5高有效，确认/解除均1秒。开机前1秒为STALE，此后质量GOOD仅表示电平采样与消抖有效，不表示验证了设备在线。带NO_OPEN_WIRE_TEST标志。
 - `Drivers_Device/mcu_internal/mcu_internal.h/.c`：M1温度函数/ADC快照注册到同一接口；温度继续FAULT，辅助VDDA为标称估算，保留原ADC采样时间；无新DMA采样超过1秒为STALE，ADC错误/零值FAULT。
 - `Middleware/filter/sensor_filter.h/.c`：固定5样本中值/均值、带独立确认/解除时长的二态滤波器；整数，无动态大缓冲。
 - `BSP/bsp_controls.c`、`Src/stm32f1xx_it.c`：EXTI3处理PB3超声；共享EXTI15_10先PB12 DHT，再PC13；没有EC11。DHT12仅在接收期间开启，完成后显式关闭IMR，因为F1 HAL_GPIO_Init(INPUT)不会自动关闭已有EXTI。

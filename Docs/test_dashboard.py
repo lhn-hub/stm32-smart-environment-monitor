@@ -58,21 +58,22 @@ def mock_tests(browser):
     page.locator("#servo").fill("90")
     page.locator("#servo-send").click()
     emit(page, "cmd/resp", {"id": 2, "cmd": "servo", "status": "done"})
-    page.locator("#buzzer-send").click()
-    emit(page, "cmd/resp", {"id": 3, "cmd": "buzzer", "status": "done"})
     page.locator("#arm-on").click()
-    emit(page, "cmd/resp", {"id": 4, "cmd": "arm", "status": "queued"})
+    emit(page, "cmd/resp", {"id": 3, "cmd": "arm", "status": "queued"})
     assert page.locator("#mode").inner_text() == "撤防"
-    emit(page, "cmd/resp", {"id": 5, "cmd": "arm", "status": "done"})
-    assert page.locator("#arm-on").is_disabled()
     emit(page, "cmd/resp", {"id": 4, "cmd": "arm", "status": "done"})
+    assert page.locator("#arm-on").is_disabled()
+    emit(page, "cmd/resp", {"id": 3, "cmd": "arm", "status": "done"})
     assert page.locator("#arm-off").is_enabled()
-    assert [x["payload"] for x in page.evaluate("__published")] == ["fan=45", "servo=90", "buzzer=300", "arm=1"]
+    assert [x["payload"] for x in page.evaluate("__published")] == ["fan=45", "servo=90", "arm=1"]
     emit(page, "telemetry", {**SAMPLE, "mode": 1, "state": 4})
     assert page.locator("#fan-send").is_disabled()
     page.locator("#arm-off").click()
     emit(page, "cmd/resp", {"id": 6, "cmd": "arm", "status": "rejected"})
     assert "已拒绝" in page.locator("#response").inner_text()
+    page.evaluate("wifiBegin('scan');parseWifiLine('@WIFI +CWLAP:(3,\"测试热点\",-42,\"aa:bb:cc:dd:ee:ff\",1)')")
+    assert page.locator("#wifi-list option").count() == 2
+    assert "测试热点" in page.locator("#wifi-list option").nth(1).inner_text()
     emit(page, "telemetry", {**SAMPLE, "q": 23, "air": -1, "state": 1, "fault": 16})
     assert page.locator("#air").inner_text() == "不可用"
     assert page.locator("#fan-send").is_disabled()

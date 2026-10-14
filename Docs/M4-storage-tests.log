@@ -1,9 +1,0 @@
-PASS KV500 saves with reset each time; alternating independent sectors/CRC
-PASS KV power cuts at every byte of sector erase/data/commit; old-or-new only, resave after reboot
-PASS blank initialization power cuts recover without erasing sole valid default
-PASS events2200 entries:64KB ring wrap, newest20 CRC/sequence after reboot
-PASS event power cuts at every erase/data/commit byte: last committed survives, next seq continuous
-PASS partial erase of oldest sector at full-ring wrap preserves latest records
-PASS torn first log entry recovery; reserved sector never mutated
-PASS corrupted newest KV falls back; sequence wrap selects newest committed record
-PASS actual storage queue: offline/busy/full refusal, apply after commit only, failure retains prior visible/durable config

@@ -56,7 +56,7 @@ void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(ULTRA_TRIG_PORT, ULTRA_TRIG_PIN, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(BSP_GPIO_PORT_B, BSP_GPIO_PIN_13|BSP_GPIO_PIN_5, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(BSP_GPIO_PORT_B, BSP_GPIO_PIN_13, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(BSP_GPIO_PORT_B, BSP_GPIO_PIN_8|BSP_GPIO_PIN_9, GPIO_PIN_SET);
@@ -86,9 +86,9 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(BSP_GPIO_PORT_B, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PB13 PB5 PB8
+  /*Configure GPIO pins : PB13 PB8
                            PB9 */
-  GPIO_InitStruct.Pin = BSP_GPIO_PIN_13|BSP_GPIO_PIN_5|BSP_GPIO_PIN_8
+  GPIO_InitStruct.Pin = BSP_GPIO_PIN_13|BSP_GPIO_PIN_8
                           |BSP_GPIO_PIN_9;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
@@ -114,11 +114,17 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(ULTRA_ECHO_PORT, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PB4 */
-  GPIO_InitStruct.Pin = BSP_GPIO_PIN_4;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  /* Removed buzzer: PB5 remains an unused, low-biased input. */
+  GPIO_InitStruct.Pin = BSP_GPIO_PIN_5;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
   HAL_GPIO_Init(BSP_GPIO_PORT_B, &GPIO_InitStruct);
+
+  /* Radar OT2 keeps PB4, input-only. */
+  GPIO_InitStruct.Pin = RADAR_PIN;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(RADAR_PORT, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI0_IRQn, BSP_IRQ_EXTI0_PRIO, BSP_IRQ_SUBPRIO);
@@ -126,9 +132,6 @@ void MX_GPIO_Init(void)
 
   HAL_NVIC_SetPriority(EXTI3_IRQn, BSP_IRQ_EXTI3_PRIO, BSP_IRQ_SUBPRIO);
   HAL_NVIC_EnableIRQ(EXTI3_IRQn);
-
-  HAL_NVIC_SetPriority(EXTI4_IRQn, BSP_IRQ_EXTI4_PRIO, BSP_IRQ_SUBPRIO);
-  HAL_NVIC_EnableIRQ(EXTI4_IRQn);
 
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, BSP_IRQ_EXTI15_10_PRIO, BSP_IRQ_SUBPRIO);
   HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);

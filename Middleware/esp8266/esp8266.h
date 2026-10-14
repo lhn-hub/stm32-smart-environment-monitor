@@ -8,7 +8,6 @@ typedef enum {
     NETWORK_CMD_ARM = 1,
     NETWORK_CMD_FAN,
     NETWORK_CMD_SERVO,
-    NETWORK_CMD_BUZZER,
     NETWORK_CMD_THRESHOLD,
     NETWORK_CMD_REBOOT,
     NETWORK_CMD_ACK,
@@ -48,5 +47,7 @@ void network_command_reply(const network_command_t *command, unsigned status);
 int network_reboot_response_sent(void);
 int network_event_enqueue(uint32_t type, int32_t parameter, int32_t auxiliary, uint32_t time);
 int network_get_status(network_status_t *status);
+int network_provision_scan(void);
+int network_provision_join(void);
 
 #endif

@@ -106,6 +106,8 @@ static char mqtt_rx_payload[NET_PAYLOAD_SIZE];
 static uint32_t config_sent_seq,config_tx_seq;
 static int32_t config_tx_fields[CFG_FIELD_COUNT];
 static uint8_t time_request_pending;
+static uint8_t provision_mode;
+static uint32_t provision_save_seq;
 
 static void copy_text(char *dst, size_t capacity, const char *src)
 {
@@ -235,7 +237,6 @@ static const char *command_name(unsigned kind)
     case NETWORK_CMD_ARM: return "arm";
     case NETWORK_CMD_FAN: return "fan";
     case NETWORK_CMD_SERVO: return "servo";
-    case NETWORK_CMD_BUZZER: return "buzzer";
     case NETWORK_CMD_THRESHOLD: return "th";
     case NETWORK_CMD_REBOOT: return "reboot";
     case NETWORK_CMD_ACK: return "ack";
@@ -296,11 +297,6 @@ static int parse_command(const char *payload)
         if (parse_number(value, &number) || number < 0 || number > 180) return -1;
         return command_push(NETWORK_CMD_SERVO, 0, number);
     }
-    if (!strcmp(key, "buzzer")) {
-        if (parse_number(value, &number) || number <= 0 ||
-            number > (int32_t)APP_BEEP_MAX_MS) return -1;
-        return command_push(NETWORK_CMD_BUZZER, 0, number);
-    }
     if (!strcmp(key, "reboot")) {
         if (parse_number(value, &number) || number != 1) return -1;
         return command_push(NETWORK_CMD_REBOOT, 0, number);
@@ -340,6 +336,9 @@ void net_on_rx_line(const char *line, size_t length)
 {
     (void)length;
     if (!line) return;
+    if (provision_mode==1u && !strncmp(line, "+CWLAP:", 7)) {
+        bsp_console_line(line, strlen(line)); return;
+    }
     if ((state == NET_AT || state == NET_GMR) && line[0])
         LOGI("ESP启动应答：%s",line);
     if (at_request.active && at_request.expect && strstr(line, at_request.expect)) {
@@ -377,10 +376,9 @@ void net_on_rx_line(const char *line, size_t length)
         int32_t rssi;
         if (comma && !parse_number(comma + 1, &rssi)) status.rssi = (int8_t)rssi;
     }
-    if (line[0] && line[0] != '+' && strcmp(line, "OK") && strcmp(line, "ERROR") &&
-        strcmp(line, "SEND OK") && strcmp(line, "SEND FAIL") &&
-        strcmp(line, "CONNECT") && strcmp(line, "CLOSED") &&
-        strcmp(line, "ready") && strncmp(line, "WIFI ", 5))
+    if (state==NET_GMR && line[0] && line[0] != '+' &&
+        strncmp(line,"AT+",3) && strcmp(line,"OK") && strcmp(line,"ERROR") &&
+        strcmp(line,"ready") && strncmp(line,"WIFI ",5))
     {
         copy_text(status.version, sizeof(status.version), line);
     }
@@ -557,10 +555,29 @@ static void enter_reset(void)
     at_request.done = 0;
     mqtt_rx_reset();
 }
+int network_provision_scan(void)
+{if(provision_mode || __get_IPSR())return -1;provision_mode=1;enter_reset();return 0;}
+int network_provision_join(void)
+{
+    char ssid[APP_CFG_SSID],password[APP_CFG_PASSWORD];
+    if(provision_mode || __get_IPSR() || bsp_console_wifi_text(ssid,password))return -1;
+    memset(password,0,sizeof(password));
+    provision_mode=2;enter_reset();return 0;
+}
 
+static void provision_finish(const char *result)
+{
+    bsp_console_line(result,strlen(result));
+    provision_mode=0;
+    bsp_console_release();
+    enter_reset();
+}
 static void state_retry_or_reset(uint32_t now)
 {
     if (++state_attempts < ESP_RETRY_MAX) return;
+    if(provision_mode){
+        provision_finish(provision_mode==1u?"SCAN_ERROR":"JOIN_ERROR");return;
+    }
     round_failed(now);
 }
 
@@ -597,10 +614,13 @@ static int build_join(void)
     char ssid[APP_CFG_SSID], password[APP_CFG_PASSWORD];
     char *tx;
     size_t cap;
-    if (storage_get_network_text(STORAGE_NET_SSID, ssid, sizeof(ssid)) ||
-        storage_get_network_text(STORAGE_NET_PASSWORD, password, sizeof(password))) return -1;
+    if(provision_mode==2u){
+        if(bsp_console_wifi_text(ssid,password))return -1;
+    }else if (storage_get_network_text(STORAGE_NET_SSID, ssid, sizeof(ssid)) ||
+              storage_get_network_text(STORAGE_NET_PASSWORD, password, sizeof(password))) return -1;
     tx = bsp_net_tx_buffer(&cap);
-    return (int)snprintf(tx, cap, "AT+CWJAP=\"%s\",\"%s\"\r\n", ssid, password);
+    { int n=snprintf(tx,cap,"AT+CWJAP=\"%s\",\"%s\"\r\n",ssid,password);
+      memset(password,0,sizeof(password));return n; }
 }
 
 static int build_topic(char *topic, size_t capacity, const char *suffix)
@@ -914,6 +934,8 @@ void network_init(void)
     failed_rounds = 0;
     memset((void *)&status.ip, 0, sizeof(status.ip));
     next_telemetry = HAL_GetTick() + APP_TELEMETRY_MS;
+    provision_mode=0;
+    provision_save_seq=0;
 }
 
 void network_poll(uint32_t now)
@@ -922,6 +944,13 @@ void network_poll(uint32_t now)
     char host[APP_CFG_HOST], *tx;
     size_t cap;
     uint32_t port, keepalive;
+    if(provision_mode==3u){
+        int32_t fields[CFG_FIELD_COUNT];storage_status_t store;
+        if(!storage_get_fields(fields,&store) && !store.pending)
+            provision_finish(store.ready && store.config_seq!=provision_save_seq?
+                             "JOIN_SAVED":"SAVE_ERROR");
+        return;
+    }
     at_poll(now);
     result = mqtt_raw_poll(now);
     if (result < 0) {
@@ -978,7 +1007,21 @@ void network_poll(uint32_t now)
         case NET_AT: alarm_selftest_report(FAULT_ESP,1);state = NET_GMR; break;
         case NET_GMR: state = NET_MODE; break;
         case NET_MODE: state = NET_JOIN; break;
-        case NET_JOIN: state = NET_IP; break;
+        case NET_JOIN:
+            if(provision_mode==1u){provision_finish("SCAN_END");return;}
+            if(provision_mode==2u){
+                storage_status_t store;
+                int32_t fields[CFG_FIELD_COUNT];
+                if(storage_get_fields(fields,&store) || storage_set_wifi()){
+                    provision_finish("SAVE_BUSY");
+                } else {
+                    provision_save_seq=store.config_seq;
+                    provision_mode=3;
+                    bsp_console_line("SAVE_PENDING",12u);
+                }
+                return;
+            }
+            state = NET_IP; break;
         case NET_IP: state = NET_RSSI; break;
         case NET_RSSI: state = NET_TCP_MUX; break;
         case NET_TCP_MUX: state = NET_TCP_MODE; break;
@@ -995,7 +1038,7 @@ void network_poll(uint32_t now)
     }
     if (state == NET_RESET) {
         if (!reset_done) {
-            if (bsp_net_hard_reset()) { round_failed(now); return; }
+            if (bsp_net_hard_reset()) { state_retry_or_reset(now); return; }
             reset_done = 1; mqtt_conn_ack = 0; state = NET_AT; state_attempts = 0;
         }
         return;
@@ -1010,10 +1053,10 @@ void network_poll(uint32_t now)
         if (at_send_cmd("AT+CWMODE=1\r\n","OK",NET_CMD_TIMEOUT,1)) state_retry_or_reset(now);
         else state_waiting = 1;
     } else if (state == NET_JOIN) {
-        int n = build_join();
+        int n = provision_mode==1u?0:build_join();
         char *tx = bsp_net_tx_buffer(NULL);
         if (n < 0 || (size_t)n >= APP_NET_TX_SIZE ||
-            at_send_cmd(tx,"OK",NET_JOIN_TIMEOUT,1)) state_retry_or_reset(now);
+            at_send_cmd(provision_mode==1u?"AT+CWLAP\r\n":tx,"OK",NET_JOIN_TIMEOUT,1)) state_retry_or_reset(now);
         else state_waiting = 1;
     } else if (state == NET_IP) {
         status.ip[0] = 0;

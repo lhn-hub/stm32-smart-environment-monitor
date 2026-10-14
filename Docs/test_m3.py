@@ -5,6 +5,7 @@ import os, subprocess
 ROOT=Path(__file__).resolve().parents[1]
 OUT=ROOT/'tmp/m3-test';OUT.mkdir(parents=True,exist_ok=True)
 ENV=dict(os.environ);ENV['PATH']='D:/msys64/ucrt64/bin;'+ENV['PATH']
+(OUT/'app_config.h').write_text('#ifndef TEST_APP_CONFIG_H\n#define TEST_APP_CONFIG_H\n#include "../../App/app_config.h"\n#undef APP_MQ_DO_ENABLED\n#define APP_MQ_DO_ENABLED 0\n#endif\n',encoding='utf-8')
 (OUT/'stm32f1xx_hal.h').write_text(r'''
 #ifndef TEST_HAL_H
 #define TEST_HAL_H

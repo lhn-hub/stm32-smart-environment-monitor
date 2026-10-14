@@ -38,7 +38,6 @@ int alarm_set_mode(unsigned armed);
 int alarm_manual_fan(unsigned percent);
 int alarm_manual_servo(unsigned angle);
 int alarm_manual_effect(effect_t effect);
-int alarm_manual_beep(uint16_t ms);
 int alarm_manual_rgb(uint16_t r,uint16_t g,uint16_t b);
 #if APP_M7_TEST_ENABLED
 extern volatile uint32_t m7_test_request,m7_test_cycles,m7_test_failures;

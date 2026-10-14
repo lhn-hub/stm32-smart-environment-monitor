@@ -135,13 +135,13 @@ M5 cross mode=2 pass=100/100 errors=0 jedec_errors=0 spi_waits=<实测> fan_wait
 ## PA4/PA7及PWM截图要求
 
 共同接地，探头接PA4(CS/STBY)、PA7(MOSI/BIN1)、PA5(SCK)、PB1(PWMB)；
-另测PB13(BIN2)、PA8(servo)、PB5(buzzer)。9MHz SPI建议100MS/s以上采样；
+另测PB13(BIN2)、PA8(servo)、PB4(buzzer)。9MHz SPI建议100MS/s以上采样；
 SPI解码Mode0/MSB，保留时基、采样率、电压刻度、触发沿、日期及测试命令。
 截图至少包括以下四组，不用软件绘图替代：
 
 | 截图 | 触发/时基 | 应看到的波形 |
 |---|---|---|
-| 上电/复位/急停后复位 | 电源或NRST，覆盖启动全过程并另放大PA8 | PA4低、PB1无非零占空比、PB5低；PA8先低，再20ms周期/500us高脉冲；无开机RGB自检/蜂鸣 |
+| 上电/复位/急停后复位 | 电源或NRST，覆盖启动全过程并另放大PA8 | PA4低、PB1无非零占空比、PB4低；PA8先低，再20ms周期/500us高脉冲；无开机RGB自检/蜂鸣 |
 | 风扇启动和缓启 | PA4上升沿；另取1秒窗口和50us周期放大 | PA5停止时钟；PB13低；PA7先成为稳定高，再PA4高；PB1先0，随后20kHz占空比连续升到命令值 |
 | 风扇停止/日志接续 | PA4下降沿，放大切换并保留后续SPI包 | CCR归零后STBY低；PA7先低再恢复SPI复用；之后Flash包PA4低期间有SCK/MOSI，PB1保持0；每次片选结束PA4可短暂高，不能出现风扇PWM |
 | Flash中请求风扇 | 覆盖整个模式2事务及后续缓启 | Flash有效包没有被风扇抢断；PA4低时完成SPI，写入BUSY轮询允许多个片选脉冲；事务释放后才出现PA7稳定高/PA4高和PB1斜坡 |

@@ -37,6 +37,8 @@ uint32_t rtc_get(void){return 12345;}
 void alarm_selftest_report(uint32_t mask,int passed){(void)mask;(void)passed;}
 int datahub_set_gas_limits(uint32_t a,uint32_t b){applied_smoke=a;applied_air=b;return 0;}
 void bsp_log(const char*l,const char*f,...){(void)l;(void)f;}
+int bsp_console_wifi_text(char *ssid,char *password)
+{strcpy(ssid,"new-hotspot");strcpy(password,"12345678");return 0;}
 int network_event_enqueue(uint32_t t,int32_t p,int32_t a,uint32_t time)
 {(void)t;(void)p;(void)a;(void)time;return 0;}
 static uint8_t flash[FLASH_LOG_END_EXCLUSIVE],backup[sizeof(flash)];
@@ -162,6 +164,17 @@ int main(void){
  }
  puts("PASS actual storage queue: 100 fan waits preserve queued config/ready state, offline/busy/full refusal, commit-only apply, failure retains prior config");
  reset_media();assert(!storage_setup());storage_start();
+ {
+  char ssid[APP_CFG_SSID];storage_status_t s;int32_t values[CFG_FIELD_COUNT];
+  assert(!storage_set_wifi());
+  assert(storage_set_wifi()==-1);
+  assert(!storage_get_network_text(STORAGE_NET_SSID,ssid,sizeof(ssid))&&strcmp(ssid,"new-hotspot"));
+  bus_busy=1;storage_poll();bus_busy=0;storage_poll();
+  assert(!storage_get_network_text(STORAGE_NET_SSID,ssid,sizeof(ssid))&&!strcmp(ssid,"new-hotspot"));
+  assert(!storage_get_fields(values,&s)&&s.ready&&!s.pending);
+  assert(!kv_load(&c)&&!strcmp(c.ssid,"new-hotspot")&&c.temp_x10==500);
+ }
+ reset_media();assert(!storage_setup());storage_start();
  for(i=0;i<APP_STORAGE_RECENT+3;i++){assert(!storage_event(EVENT_MANUAL,(int32_t)i,7));storage_poll();}
  {int32_t values[CFG_FIELD_COUNT];storage_status_t s;event_record_t rec;unsigned nr;uint32_t errors;
   assert(!storage_get_fields(values,&s));errors=s.errors;
@@ -201,25 +214,25 @@ int main(void){
   assert(storage_recent((unsigned)n,&rec,&nr)==-1&&nr==n);
  }
  puts("PASS sparse-media sector rotation trims erased cached records to the committed Flash count");
-#if APP_NETWORK_PROVISION
  reset_media();assert(kv_load(&c)==1);
  c.temp_x10=630;c.distance_cm=44;c.smoke_ms=600;c.air_ms=800;c.mode=1;
  strcpy(c.ssid,"old-network");strcpy(c.wifi_password,"old-pass");strcpy(c.device,"old-device");
  memset(c.reserved,0xa5,sizeof(c.reserved));assert(!kv_save(&c));old=c.seq;
  assert(!eventlog_init());assert(!log_append(99,EVENT_MANUAL,49,0));
- assert(!storage_setup());storage_start();assert(!kv_load(&c)&&c.seq==old+1);
- assert(!strcmp(c.ssid,APP_WIFI_SSID)&&!strcmp(c.wifi_password,APP_WIFI_PASSWORD));
- assert(!strcmp(c.device,APP_DEVICE_DEFAULT)&&c.temp_x10==630&&c.distance_cm==44);
+ assert(!storage_setup());storage_start();assert(!kv_load(&c)&&c.seq==old);
+ assert(!storage_set_wifi());storage_poll();assert(!kv_load(&c)&&c.seq==old+1);
+ assert(!strcmp(c.ssid,"new-hotspot")&&!strcmp(c.wifi_password,"12345678"));
+ assert(!strcmp(c.device,"old-device")&&c.temp_x10==630&&c.distance_cm==44);
  assert(c.smoke_ms==600&&c.air_ms==800&&c.mode==1&&c.reserved[0]==0xa5);
- assert(!log_read_last(2,records,&n)&&n==2&&records[1].parameter==49);
+ assert(!log_read_last(3,records,&n)&&n==3&&records[2].parameter==49);
  old=c.seq;storage_start();assert(!kv_load(&c)&&c.seq==old);
  strcpy(c.ssid,"old-network");assert(!kv_save(&c));old=c.seq;
- assert(!storage_setup());program_error=1;storage_start();program_error=0;
+ assert(!storage_setup());storage_start();assert(!storage_set_wifi());
+ program_error=1;storage_poll();program_error=0;
  {int32_t values[CFG_FIELD_COUNT];storage_status_t s;
   assert(!storage_get_fields(values,&s)&&!s.ready&&s.errors);
   assert(!kv_load(&c)&&c.seq==old&&!strcmp(c.ssid,"old-network"));}
  puts("PASS local network provisioning: legacy thresholds/mode/reserved/events survive, idempotent reboot, failed commit leaves old KV valid and storage offline");
-#endif
 #if APP_STORAGE_STRESS_ENABLED
  reset_media();assert(!storage_setup());storage_start();
  extern volatile uint32_t storage_bench_request;
@@ -249,7 +262,7 @@ for path in ['tmp/storage-test','Drivers_Device','App','BSP','Drivers_Device/kvs
 args+=['tmp/storage-test/test.c','Drivers_Device/kvstore/kvstore.c','Drivers_Device/eventlog/eventlog.c','App/storage.c','-o','tmp/storage-test/test.exe']
 subprocess.run(args,cwd=ROOT,env=env,check=True)
 subprocess.run([str(OUT/'test.exe')],cwd=ROOT,env=env,check=True)
-provision=args+['-DAPP_NETWORK_PROVISION=1','-DAPP_WIFI_SSID="test-network"','-DAPP_WIFI_PASSWORD="test-pass"','-DAPP_DEVICE_DEFAULT="test-device"']
+provision=args+['-DAPP_WIFI_SSID="test-network"','-DAPP_WIFI_PASSWORD="test-pass"','-DAPP_DEVICE_DEFAULT="test-device"']
 subprocess.run(provision,cwd=ROOT,env=env,check=True)
 subprocess.run([str(OUT/'test.exe')],cwd=ROOT,env=env,check=True)
 stress_config=OUT/'app_config.h'

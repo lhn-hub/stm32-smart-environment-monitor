@@ -47,10 +47,6 @@ void bsp_safe_state(void) { buzz=0; memset(pwm,0,sizeof(pwm)); }
 #define RGB_R_CH 0u
 #define RGB_G_CH 1u
 #define RGB_B_CH 2u
-#define BUZZER_GPIO_PORT ((GPIO_TypeDef*)3)
-#define BUZZER_PIN 8u
-#define BUZZER_ON_LEVEL 1u
-#define BUZZER_OFF_LEVEL 0u
 #define pdTRUE 1
 #define pdFALSE 0
 #define pdPASS 1
@@ -61,8 +57,6 @@ void bsp_safe_state(void) { buzz=0; memset(pwm,0,sizeof(pwm)); }
 static uint32_t HAL_GetTick(void) { return now; }
 static unsigned HAL_GPIO_ReadPin(GPIO_TypeDef *p,unsigned pin)
 { (void)pin; return pins[(uintptr_t)p]; }
-static void HAL_GPIO_WritePin(GPIO_TypeDef *p,unsigned pin,unsigned value)
-{ (void)p; (void)pin; buzz=value; }
 static void MX_TIM2_Init(void) { }
 static int HAL_TIM_PWM_Start(void *t,unsigned c) { (void)t;(void)c;return 0; }
 static QueueHandle_t xQueueCreate(unsigned n,unsigned size)
@@ -71,7 +65,6 @@ static int xQueueSend(QueueHandle_t q,const void *p,unsigned timeout)
 { (void)timeout;if(q->count==q->capacity)return 0;memcpy(q->data+q->tail*q->size,p,q->size);q->tail=(q->tail+1)%q->capacity;q->count++;return 1; }
 static int xQueueReceive(QueueHandle_t q,void *p,unsigned timeout)
 { (void)timeout;if(!q->count)return 0;memcpy(p,q->data+q->head*q->size,q->size);q->head=(q->head+1)%q->capacity;q->count--;return 1; }
-static void xQueueReset(QueueHandle_t q){q->count=q->head=q->tail=0;}
 static int xQueueSendFromISR(QueueHandle_t q,const void *p,BaseType_t *wake)
 { *wake=0;return xQueueSend(q,p,0); }
 static TimerHandle_t xTimerCreate(const char *n,unsigned t,int reload,void *id,void (*cb)(TimerHandle_t))
@@ -83,14 +76,14 @@ int main(void)
 {
     key_event_t e; unsigned i;
     assert(!bsp_controls_init()); assert(pwm[0]+pwm[1]+pwm[2]==0&&!buzz);
-    assert(!effect_set(EFFECT_FIRE));step(10);assert(pwm[0]==999&&buzz);
-    step(100);assert(!buzz);step(150);assert(!pwm[0]);step(250);assert(pwm[0]==999);
-    assert(!effect_set(EFFECT_INTRUSION));step(10);assert(pwm[0]==999&&pwm[2]==999&&buzz);
-    step(500);assert(!pwm[0]&&!pwm[2]&&buzz);step(1000);assert(!buzz);
+    assert(!effect_set(EFFECT_FIRE));step(10);assert(pwm[0]==999);
+    step(100);step(150);assert(!pwm[0]);step(250);assert(pwm[0]==999);
+    assert(!effect_set(EFFECT_INTRUSION));step(10);assert(pwm[0]==999&&pwm[2]==999);
+    step(500);assert(!pwm[0]&&!pwm[2]);step(1000);
     assert(!effect_set(EFFECT_AIR));step(10);assert(pwm[0]==999&&pwm[1]==999&&!buzz);
     assert(!effect_set(EFFECT_FAULT));step(10);assert(pwm[0]==999&&pwm[1]==999);step(500);assert(!pwm[0]&&!pwm[1]);
     assert(!effect_set(EFFECT_NETWORK));step(500);assert(pwm[1]==499);step(500);assert(pwm[1]==999);step(1000);assert(!pwm[1]);
-    now=UINT32_MAX-100;assert(!effect_set(EFFECT_FIRE));step(400);assert(!pwm[0]&&buzz);
+    now=UINT32_MAX-100;assert(!effect_set(EFFECT_FIRE));step(400);assert(!pwm[0]);
     assert(effect_set(EFFECT_COUNT)==-1);assert(!effect_set(EFFECT_STANDBY));step(10);assert(!buzz&&!pwm[0]&&!pwm[1]&&!pwm[2]);
     for(i=0;i<3;i++) {
         pins[i]=1;step(10);pins[i]=0;step(10);assert(!bsp_key_get(&e));
@@ -100,11 +93,9 @@ int main(void)
         assert(bsp_key_get(&e) && e.source==(key_source_t)i && e.action==KEY_LONG);
         step(1500);assert(!bsp_key_get(&e));pins[i]=0;step(10);step(30);assert(!bsp_key_get(&e));
     }
-    assert(!beep_ms(30));step(10);assert(buzz);step(30);assert(!buzz);
-    { beep_pattern_t p={20,30,2};assert(!beep_pattern(&p));step(10);assert(buzz);step(20);assert(!buzz);step(30);assert(buzz);step(20);assert(!buzz); }
     assert(rgb_set(1000,0,0)==-1);
-    fault=1;assert(beep_ms(20)==-1);assert(rgb_set(1,1,1)==-1);step(10);assert(!buzz);
+    fault=1;assert(rgb_set(1,1,1)==-1);step(10);assert(!buzz);
     assert(effect_set(EFFECT_FIRE)==-1);
-    puts("PASS actual controls: safe startup, six effects/timing/wrap/cancel/fault, debounce/click/1500ms long/no release click, queued beep");
-    free(keys);free(edges);free(beeps);return 0;
+    puts("PASS actual controls: safe startup, six light effects/timing/wrap/fault, debounce/click/1500ms long/no release click");
+    free(keys);free(edges);return 0;
 }

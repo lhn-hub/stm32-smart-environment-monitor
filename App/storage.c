@@ -18,6 +18,7 @@ static event_record_t recent[APP_STORAGE_RECENT];
 static unsigned recent_count;
 static int32_t fields[CFG_FIELD_COUNT];
 static storage_status_t state;
+#define CFG_NETWORK 0x100u
 #if APP_STORAGE_STRESS_ENABLED
 /* Bench-only: debugger requests1=500 KV writes,2=2304 events. One op per
  * LogTask iteration keeps normal heartbeat supervision. Never tag test binary. */
@@ -71,20 +72,6 @@ void storage_start(void)
         LOGI("存储初始化：KV扫描结果=%d 序号=%lu",(long)result,(unsigned long)current_config.seq);
         if(result<0){LOGE("KV扫描/默认配置写入失败");offline();return;}
     }
-#if APP_NETWORK_PROVISION
-    /* Explicit local provisioning preserves all non-network KV fields. */
-    if(strcmp(current_config.ssid,APP_WIFI_SSID) || strcmp(current_config.wifi_password,APP_WIFI_PASSWORD) ||
-       strcmp(current_config.mqtt_host,APP_MQTT_HOST) || strcmp(current_config.mqtt_user,APP_MQTT_USER) ||
-       strcmp(current_config.mqtt_password,APP_MQTT_PASSWORD) || strcmp(current_config.device,APP_DEVICE_DEFAULT) ||
-       current_config.mqtt_port!=APP_MQTT_PORT || current_config.mqtt_keepalive!=APP_MQTT_KEEPALIVE){
-        strcpy(current_config.ssid,APP_WIFI_SSID);strcpy(current_config.wifi_password,APP_WIFI_PASSWORD);
-        strcpy(current_config.mqtt_host,APP_MQTT_HOST);strcpy(current_config.mqtt_user,APP_MQTT_USER);
-        strcpy(current_config.mqtt_password,APP_MQTT_PASSWORD);strcpy(current_config.device,APP_DEVICE_DEFAULT);
-        current_config.mqtt_port=APP_MQTT_PORT;current_config.mqtt_keepalive=APP_MQTT_KEEPALIVE;
-        if(kv_save(&current_config)){LOGE("网络配置提交失败");offline();return;}
-        LOGI("网络配置已保存 序号=%lu 设备=%s",(unsigned long)current_config.seq,current_config.device);
-    }
-#endif
     {
         int result=eventlog_init();
         LOGI("存储初始化：事件日志扫描结果=%d 下一序号=%lu",(long)result,(unsigned long)eventlog_next_seq());
@@ -117,6 +104,11 @@ int storage_set(unsigned field,int32_t value)
     if(field>=CFG_FIELD_COUNT || value<0 || (field==CFG_TEMP&&value>APP_EDIT_MAX_TEMP) ||
        (field==CFG_DISTANCE&&value>APP_EDIT_MAX_DISTANCE) ||
        ((field==CFG_SMOKE||field==CFG_AIR)&&value>APP_EDIT_MAX_CONFIRM_MS) || (field==CFG_MODE&&value>1))return -1;
+    return enqueue(&r,1);
+}
+int storage_set_wifi(void)
+{
+    request_t r={0,rtc_get(),CFG_NETWORK,0};
     return enqueue(&r,1);
 }
 int storage_event(uint32_t type,int32_t param,int32_t aux)
@@ -184,7 +176,13 @@ void storage_poll(void)
     if(r.kind==EVENT_BUS_TEST)m5_bench_storage_hook((unsigned)r.second);
 #endif
     if(!r.kind){
-        switch(r.first){case CFG_TEMP:current_config.temp_x10=r.second*10;break;case CFG_DISTANCE:current_config.distance_cm=(uint32_t)r.second;break;
+        switch(r.first){case CFG_NETWORK:
+            /* Console stays frozen until NetTask observes the KV completion. */
+            if(bsp_console_wifi_text(current_config.ssid,current_config.wifi_password)){
+                offline();goto done;
+            }
+            break;
+        case CFG_TEMP:current_config.temp_x10=r.second*10;break;case CFG_DISTANCE:current_config.distance_cm=(uint32_t)r.second;break;
         case CFG_SMOKE:current_config.smoke_ms=(uint32_t)r.second;break;case CFG_AIR:current_config.air_ms=(uint32_t)r.second;break;
         case CFG_MODE:current_config.mode=(uint32_t)r.second;break;default:offline();goto done;}
         if(kv_save(&current_config)){offline();goto done;}

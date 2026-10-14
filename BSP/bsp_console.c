@@ -1,6 +1,7 @@
 #include "bsp_services.h"
 #include "app_config.h"
 #include "usart.h"
+#include "esp8266.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
@@ -15,6 +16,8 @@ volatile const char *bsp_fault_reason;
 __attribute__((aligned(8))) uint32_t bsp_fault_stack[32];
 volatile uint32_t bsp_fault_frame[14];
 static uint16_t boot_watchdogs,boot_count;
+static char console_input[104];
+static volatile uint8_t console_state,console_length,console_bad,console_cr;
 
 void bsp_backup_restore(void)
 {
@@ -148,7 +151,68 @@ int bsp_console_init(void)
 {
     MX_USART1_UART_Init();
     log_lock = xSemaphoreCreateMutex();
-    return log_lock ? 0 : -1;
+    if(!log_lock)return -1;
+    /* No RTOS calls: priority 4 keeps RX alive through BASEPRI critical locks. */
+    HAL_NVIC_SetPriority(USART1_IRQn,4u,0u);
+    HAL_NVIC_EnableIRQ(USART1_IRQn);
+    USART1->CR1|=USART_CR1_RXNEIE;
+    return 0;
+}
+void bsp_console_line(const char *text,size_t length)
+{
+    if(!text || bsp_log_quiet_begin(APP_LOG_LOCK_MS))return;
+    HAL_UART_Transmit(&huart1,(uint8_t *)"@WIFI ",6u,APP_UART_TIMEOUT_MS);
+    HAL_UART_Transmit(&huart1,(uint8_t *)text,(uint16_t)length,APP_UART_TIMEOUT_MS);
+    HAL_UART_Transmit(&huart1,(uint8_t *)"\r\n",2u,APP_UART_TIMEOUT_MS);
+    bsp_log_quiet_end();
+}
+int bsp_console_wifi_text(char *ssid,char *password)
+{
+    const char *p=console_input+5;const char *sep=strchr(p,'\t');
+    if((console_state!=1u && console_state!=3u) || strncmp(console_input,"JOIN\t",5) ||
+       !sep || sep==p || (size_t)(sep-p)>=APP_CFG_SSID ||
+       strlen(sep+1)>=APP_CFG_PASSWORD || strchr(sep+1,'\t'))return -1;
+    /* AT quoted parameters cannot contain unescaped quotes/backslashes. */
+    if(strpbrk(p,"\"\\,"))return -1;
+    memcpy(ssid,p,(size_t)(sep-p));ssid[sep-p]=0;strcpy(password,sep+1);return 0;
+}
+void bsp_console_release(void)
+{
+    memset(console_input,0,sizeof(console_input));
+    console_length=console_bad=console_cr=0;
+    console_state=0;
+}
+/* One complete line is frozen until the owner releases it. No parsing in ISR. */
+void bsp_console_rx_irq(void)
+{
+    uint32_t sr=USART1->SR;
+    uint8_t byte=(uint8_t)USART1->DR;
+    if(console_state)return;
+    if(sr&(USART_SR_ORE|USART_SR_FE|USART_SR_NE|USART_SR_PE))console_bad=1;
+    if(!(sr&USART_SR_RXNE))return;
+    if(byte=='\n'){
+        console_input[console_length]=0;
+        console_state=console_bad?2u:1u;
+    }else if(byte=='\r')console_cr=1;
+    else if(console_cr || (byte<32u && byte!='\t') || byte==127u ||
+            console_length+1u>=sizeof(console_input))console_bad=1;
+    else console_input[console_length++]=(char)byte;
+}
+void bsp_console_poll(void)
+{
+    if(!console_state || console_state==3u)return;
+    if(console_state==2u)bsp_console_line("REJECTED",8u);
+    else if(!strcmp(console_input,"SCAN")){
+        int result=network_provision_scan();
+        if(!result)console_state=3u;
+        bsp_console_line(result?"BUSY":"SCAN_QUEUED",result?4u:11u);
+    }else if(!strncmp(console_input,"JOIN\t",5)){
+        if(!network_provision_join())
+            {console_state=3u;bsp_console_line("JOIN_QUEUED",11u);return;}
+        bsp_console_line("REJECTED",8u);
+    }
+    else bsp_console_line("REJECTED",8u);
+    bsp_console_release();
 }
 
 int bsp_log_quiet_begin(uint32_t timeout_ms)

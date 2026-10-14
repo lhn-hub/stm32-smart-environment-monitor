@@ -96,11 +96,7 @@ extern "C" {
 #define KEY_POLL_MS                10u
 #define KEY_LONGPRESS_MS           1500u
 
-/* PB5 buzzer is active high; expansion LED interface is active low. */
-#define BUZZER_GPIO_PORT           GPIOB
-#define BUZZER_PIN                 GPIO_PIN_5
-#define BUZZER_ON_LEVEL            GPIO_PIN_SET
-#define BUZZER_OFF_LEVEL           GPIO_PIN_RESET
+/* Buzzer removed; radar keeps its original PB4 input. */
 
 /* CS100A direct socket: GND/PB3(ECHO)/PA15(TRIG)/3V3.
  * Corrected against vendor schematic/HAL example with user approval 2026-10-07.

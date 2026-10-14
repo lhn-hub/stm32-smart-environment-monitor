@@ -46,6 +46,7 @@ extern GPIO_TypeDef ports[4];
 #define GPIO_MODE_IT_RISING_FALLING 3u
 #define GPIO_NOPULL 0u
 #define GPIO_PULLUP 1u
+#define GPIO_PULLDOWN 2u
 #define GPIO_SPEED_FREQ_LOW 0u
 #define EXTI0_IRQn 0u
 #define EXTI3_IRQn 3u
@@ -114,6 +115,9 @@ int main(void)
     assert(ULTRA_TRIG_PORT==GPIOA && ULTRA_TRIG_PIN==0x8000u);
     assert(ULTRA_ECHO_PORT==GPIOB && ULTRA_ECHO_PIN==8u);
     MX_GPIO_Init();
+    assert(RADAR_PORT==GPIOB && RADAR_PIN==16u);
+    assert(mode[1][4]==GPIO_MODE_INPUT && !(written[1]&16u));
+    assert(mode[1][5]==GPIO_MODE_INPUT && !(written[1]&32u));
     assert(mode[0][15]==GPIO_MODE_OUTPUT_PP);
     assert(mode[1][3]==GPIO_MODE_IT_RISING_FALLING && owner[3]==2);
     assert(owner[15]==0); /* PA15 no longer mapped to EXTI. */

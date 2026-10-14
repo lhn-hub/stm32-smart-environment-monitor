@@ -136,7 +136,6 @@ int alarm_set_mode(unsigned armed)
 int alarm_manual_fan(unsigned percent){MANUAL_REQUEST(fan_set(percent));}
 int alarm_manual_servo(unsigned angle){MANUAL_REQUEST(servo_write(angle));}
 int alarm_manual_effect(effect_t effect){MANUAL_REQUEST(effect_set(effect));}
-int alarm_manual_beep(uint16_t ms){MANUAL_REQUEST(beep_ms(ms));}
 int alarm_manual_rgb(uint16_t r,uint16_t g,uint16_t b){MANUAL_REQUEST(rgb_set(r,g,b));}
 
 static void emit_change(uint32_t type,int32_t parameter,int32_t auxiliary)

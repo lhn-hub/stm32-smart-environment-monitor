@@ -96,7 +96,7 @@ static void render_thresholds(void)
     for(i=0;i<4;i++){snprintf(text,sizeof(text),"%s:%d",threshold_labels[i],values[i]);row(i,text,i==selected[THRESHOLDS]);}
     if(editing){unsigned s=selected[THRESHOLDS];ui_progress(0,52,128,9,values[s],maxima[s]);}
 }
-static const char *const manual_labels[]={"Fan %","Servo deg","Distance","Fire","Intrusion","Air","Fault","Network","Standby","Beep","RGB Red","RGB Green","RGB Blue","I2C Scan","Font test"};
+static const char *const manual_labels[]={"Fan %","Servo deg","Distance","Fire","Intrusion","Air","Fault","Network","Standby","RGB Red","RGB Green","RGB Blue","I2C Scan","Font test"};
 static int manual_fan,manual_servo;
 static unsigned font_test;
 #define MANUAL_COUNT (sizeof(manual_labels)/sizeof(manual_labels[0]))
@@ -178,13 +178,13 @@ static void select_key(int key)
         else if(store_state.ready && !store_state.pending)editing=1;
     }
     else if(id==MANUAL){
-        if(alarm_status.state!=ALARM_DISARMED || alarm_status.faults){editing=0;return;}
+        if(alarm_status.state!=ALARM_DISARMED || alarm_status.faults){editing=0;LOGW("Manual blocked state=%u fault=%lu",alarm_status.state,(unsigned long)alarm_status.faults);return;}
         if(s<2u){editing=!editing;return;}
-        if(s>=3u && s<=12u && storage_event(EVENT_MANUAL,(int32_t)s,0))LOGW("手动测试事件未入队");
+        if(s>=3u && s<=11u && storage_event(EVENT_MANUAL,(int32_t)s,0))LOGW("手动测试事件未入队");
         if(s>=3u && s<=8u)alarm_manual_effect(s==8u?EFFECT_STANDBY:(effect_t)(s-2u));
-        else switch(s){case 9:alarm_manual_effect(EFFECT_STANDBY);alarm_manual_beep(APP_MENU_BEEP_MS);break;
-        case 10:case 11:case 12:alarm_manual_effect(EFFECT_STANDBY);alarm_manual_rgb(s==10?RGB_ARR:0,s==11?RGB_ARR:0,s==12?RGB_ARR:0);break;
-        case 13:i2c_scan();break;case 14:font_test=!font_test;break;default:break;}
+        else switch(s){case 9:case 10:case 11:
+            alarm_manual_effect(EFFECT_STANDBY);alarm_manual_rgb(s==9?RGB_ARR:0,s==10?RGB_ARR:0,s==11?RGB_ARR:0);break;
+        case 12:i2c_scan();break;case 13:font_test=!font_test;break;default:break;}
     }
 }
 static const page_t pages[PAGE_COUNT]={

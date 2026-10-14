@@ -10,14 +10,12 @@
 #include "queue.h"
 #include "timers.h"
 
-static QueueHandle_t keys, beeps;
+static QueueHandle_t keys;
 static TimerHandle_t timer;
 static QueueHandle_t edges;
 typedef struct { uint8_t raw, stable, long_sent; uint32_t changed, pressed; } key_state_t;
 static key_state_t state[3];
-static beep_pattern_t tone;
-static uint32_t tone_deadline,effect_started;
-static uint8_t tone_on;
+static uint32_t effect_started;
 static effect_t effect;
 static uint32_t dropped;
 
@@ -33,43 +31,28 @@ int rgb_set(uint16_t r, uint16_t g, uint16_t b)
     return 0;
 }
 
-int beep_pattern(const beep_pattern_t *pattern)
-{
-    if (__get_IPSR() || !beeps || bsp_is_faulted() || !pattern || !pattern->repeat || !pattern->on_ms ||
-        pattern->on_ms > APP_BEEP_MAX_MS || pattern->off_ms > APP_BEEP_MAX_MS)
-        return -1;
-    return xQueueSend(beeps, pattern, 0) == pdTRUE ? 0 : -1;
-}
-int beep_ms(uint16_t ms)
-{
-    beep_pattern_t p = {ms, 0, 1};
-    return beep_pattern(&p);
-}
 int effect_set(effect_t value)
 {
-    if((unsigned)value>=EFFECT_COUNT || __get_IPSR() || !beeps)return -1;
+    if((unsigned)value>=EFFECT_COUNT || __get_IPSR())return -1;
     taskENTER_CRITICAL();
     if(bsp_is_faulted()){taskEXIT_CRITICAL();return -1;}
-    effect=value;effect_started=HAL_GetTick();tone.repeat=0;tone_on=0;
-    xQueueReset(beeps);
-    HAL_GPIO_WritePin(BUZZER_GPIO_PORT,BUZZER_PIN,BUZZER_OFF_LEVEL);
+    effect=value;effect_started=HAL_GetTick();
     rgb_set(0,0,0);
     taskEXIT_CRITICAL();return 0;
 }
 static void effects_tick(uint32_t now)
 {
     uint32_t phase=now-effect_started;
-    uint16_t r=0,g=0,b=0;unsigned on=0;
+    uint16_t r=0,g=0,b=0;
     switch(effect){
-    case EFFECT_FIRE:r=phase%500u<250u?RGB_ARR:0;on=phase%200u<100u;break;
-    case EFFECT_INTRUSION:r=b=phase%1000u<500u?RGB_ARR:0;on=phase%2000u<1500u;break;
+    case EFFECT_FIRE:r=phase%500u<250u?RGB_ARR:0;break;
+    case EFFECT_INTRUSION:r=b=phase%1000u<500u?RGB_ARR:0;break;
     case EFFECT_AIR:r=g=RGB_ARR;break;
     case EFFECT_FAULT:r=g=phase%1000u<500u?RGB_ARR:0;break;
     case EFFECT_NETWORK:phase%=2000u;g=(uint16_t)((phase<=1000u?phase:2000u-phase)*RGB_ARR/1000u);break;
     default:return;
     }
     rgb_set(r,g,b);
-    HAL_GPIO_WritePin(BUZZER_GPIO_PORT,BUZZER_PIN,on?BUZZER_ON_LEVEL:BUZZER_OFF_LEVEL);
 }
 int bsp_key_get(key_event_t *event)
 {
@@ -103,7 +86,9 @@ static void controls_tick(TimerHandle_t handle)
     unsigned i;
     uint16_t edge;
     (void)handle;
-    if(bsp_is_faulted()) { tone.repeat=0; bsp_safe_state(); return; }
+    if(bsp_is_faulted()) {
+        bsp_safe_state(); return;
+    }
     /* Consume EXTI events here, never perform debounce in the ISR. Periodic
      * level sampling also catches release and safely recovers dropped edges. */
     while(xQueueReceive(edges,&edge,0)==pdTRUE) { (void)edge; }
@@ -124,20 +109,7 @@ static void controls_tick(TimerHandle_t handle)
     servo_poll(now);
     taskENTER_CRITICAL();
     if(bsp_is_faulted()){taskEXIT_CRITICAL();bsp_safe_state();return;}
-    if(effect!=EFFECT_STANDBY){effects_tick(now);taskEXIT_CRITICAL();return;}
-    if (!tone.repeat && xQueueReceive(beeps,&tone,0)==pdTRUE) {
-        tone_on=1; tone_deadline=now+tone.on_ms;
-        HAL_GPIO_WritePin(BUZZER_GPIO_PORT,BUZZER_PIN,BUZZER_ON_LEVEL);
-    }
-    if (tone.repeat && (int32_t)(now-tone_deadline)>=0) {
-        if (tone_on) {
-            HAL_GPIO_WritePin(BUZZER_GPIO_PORT,BUZZER_PIN,BUZZER_OFF_LEVEL);
-            tone_on=0; --tone.repeat; tone_deadline=now+tone.off_ms;
-        } else {
-            tone_on=1; tone_deadline=now+tone.on_ms;
-            HAL_GPIO_WritePin(BUZZER_GPIO_PORT,BUZZER_PIN,BUZZER_ON_LEVEL);
-        }
-    }
+    if(effect!=EFFECT_STANDBY)effects_tick(now);
     taskEXIT_CRITICAL();
 }
 
@@ -145,9 +117,8 @@ int bsp_controls_init(void)
 {
     keys=xQueueCreate(APP_KEY_QUEUE,sizeof(key_event_t));
     edges=xQueueCreate(APP_KEY_QUEUE,sizeof(uint16_t));
-    beeps=xQueueCreate(1,sizeof(beep_pattern_t));
     timer=xTimerCreate("controls",pdMS_TO_TICKS(KEY_POLL_MS),pdTRUE,NULL,controls_tick);
-    if (!keys || !edges || !beeps || !timer) return -1;
+    if (!keys || !edges || !timer) return -1;
     MX_TIM2_Init();
     if (HAL_TIM_PWM_Start(&htim2,RGB_R_CH)!=HAL_OK ||
         HAL_TIM_PWM_Start(&htim2,RGB_G_CH)!=HAL_OK ||

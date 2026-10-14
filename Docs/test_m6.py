@@ -32,7 +32,6 @@ write(
     #define APP_CFG_USER 33u
     #define APP_CFG_DEVICE 33u
     #define APP_NET_TX_SIZE 256u
-    #define APP_BEEP_MAX_MS 10000u
     #define APP_EDIT_MAX_TEMP 100
     #define APP_EDIT_MAX_DISTANCE 500
     #define APP_EDIT_MAX_CONFIRM_MS 60000
@@ -52,6 +51,8 @@ write(
     #define STORAGE_NET_USER 3u
     #define STORAGE_NET_MQTT_PASSWORD 4u
     #define STORAGE_NET_DEVICE 5u
+    #define APP_CFG_SSID 33u
+    #define APP_CFG_PASSWORD 65u
     #endif
     """,
 )
@@ -88,6 +89,10 @@ write(
     char *bsp_net_tx_buffer(size_t *);
     int bsp_net_send_buffer(size_t);
     int bsp_net_hard_reset(void);
+    void bsp_console_line(const char *,size_t);
+    void bsp_console_release(void);
+    int bsp_console_wifi_text(char *,char *);
+    void bsp_console_wifi_result(const char *);
     uint32_t rtc_get(void);
     void bsp_log(const char *, const char *, ...);
     #define LOGI(...) bsp_log("I", __VA_ARGS__)
@@ -105,6 +110,7 @@ write(
     #include <stdint.h>
     int storage_get_network_text(unsigned, char *, size_t);
     int storage_get_network_numbers(uint32_t *, uint32_t *);
+    int storage_set_wifi(void);
     #define CFG_FIELD_COUNT 5
     #define EVENT_TIME_REQUEST 8u
     typedef struct { uint32_t ready,errors,dropped,erases,config_seq,pending; } storage_status_t;
@@ -197,6 +203,13 @@ write(
         return 0;
     }
     int bsp_net_hard_reset(void) { ++reset_count; return 0; }
+    void bsp_console_line(const char *s,size_t n){assert(s&&n);}
+    void bsp_console_release(void){}
+    static char provision_ssid[33]="new-ssid",provision_password[65]="new-password";
+    int bsp_console_wifi_text(char *ssid,char *password){
+        strcpy(ssid,provision_ssid);strcpy(password,provision_password);return 0;
+    }
+    void bsp_console_wifi_result(const char *s){assert(s);}
 
     int storage_get_network_text(unsigned field, char *out, size_t capacity) {
         static const char *values[] = {
@@ -213,10 +226,11 @@ write(
         if (!port || !keepalive) return -1;
         *port = 1883u; *keepalive = 60u; return 0;
     }
+    static uint32_t config_seq=1;
+    int storage_set_wifi(void){++config_seq;return 0;}
     uint32_t rtc_get(void) { return 1234u; }
     void alarm_selftest_report(unsigned mask,int passed){assert(mask==128u && passed);}
     void alarm_get_status(alarm_status_t *s){memset(s,0,sizeof(*s));s->state=2;}
-    static uint32_t config_seq=1;
     int storage_get_fields(int32_t v[CFG_FIELD_COUNT],storage_status_t *s){
         static const int32_t values[]={50,100,3000,10000,1};
         memcpy(v,values,sizeof(values));memset(s,0,sizeof(*s));

@@ -197,9 +197,6 @@ static struct {uint32_t CR1;} spi;
 #define TB_BIN2_PORT 2
 #define TB_BIN2_PIN 13
 #define TB_SAFE_LEVEL 0
-#define BUZZER_GPIO_PORT 3
-#define BUZZER_PIN 5
-#define BUZZER_OFF_LEVEL 0
 #define FAN_SAFE_CCR 0
 #define RGB_R_PORT 4
 #define RGB_R_PIN 1
@@ -215,9 +212,10 @@ int main(void){
  a.BDTR=SERVO_MOE_MASK;a.CCR1=2500;b.CCR2=b.CCR3=b.CCR4=999;c.CCR4=3600;spi.CR1=SPI_CR1_SPE;
  bsp_emergency_stop();
  assert(bsp_is_faulted()&&!spi.CR1&&!a.BDTR&&a.CCR1==500&&!c.CCR4&&!b.CCR2&&!b.CCR3&&!b.CCR4);
- for(i=0;i<4;i++)assert(!levels[i]);
+ for(i=0;i<3;i++)assert(!levels[i]);
+ assert(levels[3]==1); /* Removed buzzer pin is never driven. */
  assert(levels[4]==RGB_OFF_LEVEL);
- puts("PASS actual BSP emergency: latched fault, SPI disabled, STBY/direction/fan/RGB/buzzer safe, TIM1 MOE disabled");
+ puts("PASS actual BSP emergency: latched fault, SPI disabled, STBY/direction/fan/RGB safe, removed buzzer untouched, TIM1 MOE disabled");
  return 0;
 }
 """

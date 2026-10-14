@@ -32,13 +32,8 @@ void bsp_log_quiet_end(void);
 #define LOGE(...) bsp_log("错误", __VA_ARGS__)
 /** @brief Set RGB PWM duties; reject values outside 0..999. */
 int rgb_set(uint16_t r, uint16_t g, uint16_t b);
-typedef struct { uint16_t on_ms, off_ms; uint8_t repeat; } beep_pattern_t;
-/** @brief Copy a nonblocking beep request; return -1 if invalid or busy. */
-int beep_pattern(const beep_pattern_t *pattern);
-/** @brief Request one nonblocking beep. */
-int beep_ms(uint16_t ms);
 typedef enum {EFFECT_STANDBY,EFFECT_FIRE,EFFECT_INTRUSION,EFFECT_AIR,EFFECT_FAULT,EFFECT_NETWORK,EFFECT_COUNT} effect_t;
-/** @brief Nonblocking light/buzzer primitive, owns outputs until replaced. */
+/** @brief Nonblocking light primitive, owns outputs until replaced. */
 int effect_set(effect_t effect);
 typedef enum { KEY_WAKEUP, KEY_BACK, KEY_CONFIRM } key_source_t;
 typedef enum { KEY_CLICK, KEY_LONG } key_action_t;
@@ -76,6 +71,11 @@ int bsp_net_send_buffer(size_t length);
 int bsp_net_hard_reset(void);
 /** @brief USART3 IRQ pre-handler; acknowledges IDLE, never parses or prints. */
 void bsp_net_idle_irq(void);
+void bsp_console_poll(void);
+void bsp_console_rx_irq(void);
+void bsp_console_release(void);
+void bsp_console_line(const char *text,size_t length);
+int bsp_console_wifi_text(char *ssid,char *password);
 /** @brief Start IWDG / refresh after Monitor has checked all heartbeats. */
 int bsp_watchdog_start(void);
 void bsp_watchdog_feed(void);

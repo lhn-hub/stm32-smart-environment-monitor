@@ -17,6 +17,7 @@ void storage_poll(void);
 int storage_get_fields(int32_t values[CFG_FIELD_COUNT],storage_status_t *status);
 /** @brief Enqueue change; RAM/hotload only changes AFTER committed readback. */
 int storage_set(unsigned field,int32_t value);
+int storage_set_wifi(void);
 int storage_event(uint32_t type,int32_t parameter,int32_t auxiliary);
 int storage_recent(unsigned index,event_record_t *out,unsigned *count);
 int storage_get_network_text(unsigned field,char *out,size_t capacity);
